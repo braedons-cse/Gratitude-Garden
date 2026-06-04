@@ -1,0 +1,45 @@
+package com.cse5236.gratitudegarden
+
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import com.cse5236.gratitudegarden.ui.GratitudeGardenApp
+import com.cse5236.gratitudegarden.util.LogTags
+
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        Log.d(LogTags.LIFECYCLE, "MainActivity onCreate()")
+
+        setContent {
+            GratitudeGardenApp()
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.d(LogTags.LIFECYCLE, "MainActivity onStart()")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d(LogTags.LIFECYCLE, "MainActivity onResume()")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d(LogTags.LIFECYCLE, "MainActivity onPause()")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d(LogTags.LIFECYCLE, "MainActivity onStop()")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(LogTags.LIFECYCLE, "MainActivity onDestroy()")
+    }
+}
