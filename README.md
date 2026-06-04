@@ -5,7 +5,7 @@ Most of the stuff was created automatically and I really haven't touched anythin
 In the app/src/main/java you can find 
   - model/ containing a GardenModel.kt file
   - ui/screens containing a Screens.kt file
-  - ui/theme containing Color.kt, Theme.kt, Type.kt files
+  - ui/theme containing Color.kt, Theme.kt, Type.kt files <- these were crated automatically
   - util/ containing LogTags.kt
   - MainActivity.kt
 
