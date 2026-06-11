@@ -1,7 +1,8 @@
 package com.cse5236.gratitudegarden.util
 
 object LogTags {
-    const val LIFECYCLE = "GG_LIFECYCLE"
-    const val SCREEN = "GG_SCREEN"
-    const val ACTION = "GG_ACTION"
+    const val MAIN_ACTIVITY = "MainActivityLifecycle"
+    const val GARDEN_SCREEN = "GardenScreenLifecycle"
+    const val ENTRY_SCREEN = "EntryScreenLifecycle"
+    const val APP_LOGIC = "GratitudeGardenLogic"
 }
