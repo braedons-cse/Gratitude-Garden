@@ -36,6 +36,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cse5236.gratitudegarden.data.GratitudeEntry
+import com.cse5236.gratitudegarden.util.LogComposableLifecycle
+import com.cse5236.gratitudegarden.util.LogTags
 import com.cse5236.gratitudegarden.ui.components.PillButton
 import com.cse5236.gratitudegarden.ui.journal.JournalUiState
 import com.cse5236.gratitudegarden.ui.journal.JournalViewModel
@@ -60,6 +62,7 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun JournalRoute() {
+    LogComposableLifecycle(LogTags.JOURNAL_SCREEN)
     val vm: JournalViewModel = viewModel(factory = JournalViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
     JournalScreen(ui = ui, onEdit = vm::edit, onDelete = vm::delete)

@@ -57,6 +57,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cse5236.gratitudegarden.ui.components.PillButton
+import com.cse5236.gratitudegarden.util.LogComposableLifecycle
+import com.cse5236.gratitudegarden.util.LogTags
 import com.cse5236.gratitudegarden.ui.garden.GardenUiState
 import com.cse5236.gratitudegarden.ui.garden.GardenViewModel
 import com.cse5236.gratitudegarden.ui.sprites.CoinIcon
@@ -83,6 +85,7 @@ private val SoilBottom = Color(0xFF8B6F47)
 
 @Composable
 fun GardenRoute() {
+    LogComposableLifecycle(LogTags.GARDEN_SCREEN)
     val vm: GardenViewModel = viewModel(factory = GardenViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
     GardenScreen(
