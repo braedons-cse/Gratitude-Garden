@@ -59,6 +59,22 @@ data class ProfileRow(
     val xp: Int = 0,
 )
 
+@Serializable
+data class Item(
+    val id: String,
+    val slug: String,
+    val category: String,
+    val name: String,
+    val rarity: String = "common",
+    @SerialName("price_coins") val priceCoins: Int = 0,
+    @SerialName("level_required") val levelRequired: Int = 1,
+    @SerialName("is_purchasable") val isPurchasable: Boolean = true,
+    @SerialName("is_starter") val isStarter: Boolean = false,
+)
+
+@Serializable
+private data class InventoryRow(@SerialName("item_id") val itemId: String)
+
 /**
  * Thin client over the Supabase backend. Business logic (coins, streaks,
  * provisioning) lives in Postgres RPCs — this just authenticates, calls them,
@@ -136,4 +152,59 @@ class GardenRepository(private val client: SupabaseClient) {
 
     suspend fun profile(): ProfileRow? =
         client.postgrest.from("profiles").select().decodeList<ProfileRow>().firstOrNull()
+
+    // ── Shop / inventory / garden interactions ───────────────────────
+    suspend fun items(category: String): List<Item> =
+        client.postgrest.from("items").select().decodeList<Item>()
+            .filter { it.category == category }
+            .sortedBy { it.priceCoins }
+
+    /** item_id -> slug for everything, so the garden can render plants by type. */
+    suspend fun itemSlugs(): Map<String, String> =
+        client.postgrest.from("items").select().decodeList<Item>()
+            .associate { it.id to it.slug }
+
+    suspend fun inventory(): Set<String> =
+        client.postgrest.from("user_inventory").select().decodeList<InventoryRow>()
+            .map { it.itemId }.toSet()
+
+    suspend fun purchaseItem(itemId: String) {
+        client.postgrest.rpc("purchase_item", buildJsonObject { put("p_item_id", itemId) })
+    }
+
+    suspend fun placePlant(itemId: String, gridX: Int, gridY: Int) {
+        client.postgrest.rpc(
+            "place_plant",
+            buildJsonObject {
+                put("p_item_id", itemId)
+                put("p_grid_x", gridX)
+                put("p_grid_y", gridY)
+            },
+        )
+    }
+
+    suspend fun waterPlant(plantId: String, cost: Int = 10) {
+        client.postgrest.rpc(
+            "water_plant",
+            buildJsonObject {
+                put("p_plant_id", plantId)
+                put("p_water_cost", cost)
+            },
+        )
+    }
+
+    /** Plant an owned seed into the first free cell. Returns false if the garden is full. */
+    suspend fun plantInFirstEmptyCell(itemId: String): Boolean {
+        val garden = garden() ?: return false
+        val occupied = plants().map { it.gridX to it.gridY }.toSet()
+        for (y in 0 until garden.gridRows) {
+            for (x in 0 until garden.gridCols) {
+                if ((x to y) !in occupied) {
+                    placePlant(itemId, x, y)
+                    return true
+                }
+            }
+        }
+        return false
+    }
 }

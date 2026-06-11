@@ -23,9 +23,11 @@ data class GardenUiState(
     val plants: List<GardenPlantRow> = emptyList(),
     val gridRows: Int = 6,
     val gridCols: Int = 5,
+    val itemSlugs: Map<String, String> = emptyMap(),
     val dailyCap: Int = 10,
     val usedToday: Int = 0,
     val submitting: Boolean = false,
+    val watering: Boolean = false,
     val message: String? = null,
 ) {
     val thoughtsLeft: Int get() = (dailyCap - usedToday).coerceAtLeast(0)
@@ -50,6 +52,7 @@ class GardenViewModel(private val repo: GardenRepository) : ViewModel() {
             val garden = repo.garden()
             val plants = repo.plants()
             val entries = repo.entries()
+            val slugs = repo.itemSlugs()
             val today = LocalDate.now().toString()
             val used = entries.count { it.entryDate == today }
             _ui.update {
@@ -62,6 +65,7 @@ class GardenViewModel(private val repo: GardenRepository) : ViewModel() {
                     plants = plants,
                     gridRows = garden?.gridRows ?: 6,
                     gridCols = garden?.gridCols ?: 5,
+                    itemSlugs = slugs,
                     usedToday = used,
                 )
             }
@@ -80,6 +84,20 @@ class GardenViewModel(private val repo: GardenRepository) : ViewModel() {
                 _ui.update { it.copy(submitting = false, message = "+5 coins · a kind thought planted 🌱") }
             } catch (e: Exception) {
                 _ui.update { it.copy(submitting = false, message = e.message ?: "Couldn't save your thought") }
+            }
+        }
+    }
+
+    fun water(plantId: String) {
+        if (_ui.value.watering) return
+        _ui.update { it.copy(watering = true) }
+        viewModelScope.launch {
+            try {
+                repo.waterPlant(plantId, 10)
+                load()
+                _ui.update { it.copy(watering = false, message = "Watered 🌱 · -10 coins") }
+            } catch (e: Exception) {
+                _ui.update { it.copy(watering = false, message = e.message ?: "Couldn't water") }
             }
         }
     }

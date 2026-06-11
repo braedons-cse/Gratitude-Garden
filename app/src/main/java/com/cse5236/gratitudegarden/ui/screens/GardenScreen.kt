@@ -59,6 +59,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cse5236.gratitudegarden.ui.components.PillButton
 import com.cse5236.gratitudegarden.util.LogComposableLifecycle
 import com.cse5236.gratitudegarden.util.LogTags
+import com.cse5236.gratitudegarden.data.GardenPlantRow
 import com.cse5236.gratitudegarden.ui.garden.GardenUiState
 import com.cse5236.gratitudegarden.ui.garden.GardenViewModel
 import com.cse5236.gratitudegarden.ui.sprites.CoinIcon
@@ -91,6 +92,7 @@ fun GardenRoute() {
     GardenScreen(
         ui = ui,
         onSubmit = { text, voice -> vm.submit(text, voice) },
+        onWater = vm::water,
         onMessageShown = vm::consumeMessage,
     )
 }
@@ -99,10 +101,12 @@ fun GardenRoute() {
 fun GardenScreen(
     ui: GardenUiState,
     onSubmit: (String, Boolean) -> Unit,
+    onWater: (String) -> Unit,
     onMessageShown: () -> Unit,
 ) {
     val context = LocalContext.current
     var showSheet by remember { mutableStateOf(false) }
+    var selectedPlant by remember { mutableStateOf<GardenPlantRow?>(null) }
 
     LaunchedEffect(ui.message) {
         ui.message?.let {
@@ -177,7 +181,7 @@ fun GardenScreen(
         Spacer(Modifier.height(10.dp))
 
         // Soil grid
-        GardenGrid(ui)
+        GardenGrid(ui = ui, onPlantClick = { selectedPlant = it })
 
         Spacer(Modifier.weight(1f))
 
@@ -218,6 +222,17 @@ fun GardenScreen(
             onSubmit = onSubmit,
         )
     }
+
+    selectedPlant?.let { plant ->
+        PlantDetailDialog(
+            plant = plant,
+            slug = ui.itemSlugs[plant.itemId],
+            coins = ui.coins,
+            watering = ui.watering,
+            onWater = { onWater(plant.id); selectedPlant = null },
+            onDismiss = { selectedPlant = null },
+        )
+    }
 }
 
 @Composable
@@ -232,7 +247,7 @@ private fun Chip(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun GardenGrid(ui: GardenUiState) {
+private fun GardenGrid(ui: GardenUiState, onPlantClick: (GardenPlantRow) -> Unit) {
     val plantAt = remember(ui.plants) { ui.plants.associateBy { it.gridY to it.gridX } }
     Box(
         modifier = Modifier
@@ -254,12 +269,16 @@ private fun GardenGrid(ui: GardenUiState) {
                                 .weight(1f)
                                 .fillMaxSize()
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(Brush.linearGradient(listOf(SoilTop, SoilBottom))),
+                                .background(Brush.linearGradient(listOf(SoilTop, SoilBottom)))
+                                .then(
+                                    if (plant != null) Modifier.clickable { onPlantClick(plant) }
+                                    else Modifier
+                                ),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (plant != null) {
                                 Plant(
-                                    colors = PlantPalette.forSeed(plant.itemId),
+                                    colors = PlantPalette.forSlug(ui.itemSlugs[plant.itemId]),
                                     stage = growthStageToSprite(plant.growthStage),
                                     modifier = Modifier.fillMaxSize().padding(4.dp),
                                 )
@@ -465,3 +484,92 @@ private fun NewEntrySheet(
 }
 
 private fun Modifier.heightInThought(): Modifier = this.height(96.dp)
+
+// ── Plant detail / watering ──────────────────────────────────────
+@Composable
+private fun PlantDetailDialog(
+    plant: GardenPlantRow,
+    slug: String?,
+    coins: Int,
+    watering: Boolean,
+    onWater: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val stage = plant.growthStage.lowercase()
+    val stageLabel = when (stage) {
+        "seedling" -> "Seedling"
+        "sapling" -> "Sapling"
+        else -> "Mature"
+    }
+    val isMature = stage == "mature"
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(PgBgSage)
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)).background(PgMoss),
+                contentAlignment = Alignment.Center,
+            ) {
+                Plant(
+                    colors = PlantPalette.forSlug(slug),
+                    stage = growthStageToSprite(plant.growthStage),
+                    modifier = Modifier.fillMaxSize().padding(14.dp),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(plantNameFromSlug(slug), fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "$stageLabel · ${plant.health.replaceFirstChar { it.uppercase() }}",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.5.sp,
+                color = PgInkSoft,
+            )
+            Spacer(Modifier.height(18.dp))
+
+            if (isMature) {
+                Text("Fully grown 🌼", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PgPrimary)
+            } else {
+                PillButton(
+                    text = if (watering) "Watering…" else "Water · 10 coins",
+                    onClick = onWater,
+                    enabled = coins >= 10 && !watering,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (coins < 10) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Plant kind thoughts to earn coins to water.",
+                        fontFamily = Nunito,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 12.5.sp,
+                        color = PgInkMuted,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Close",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = PgInkMuted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
+            )
+        }
+    }
+}
+
+private fun plantNameFromSlug(slug: String?): String {
+    val base = slug?.substringAfter('.', "") ?: ""
+    if (base.isBlank()) return "Plant"
+    return base.split('_').joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+}

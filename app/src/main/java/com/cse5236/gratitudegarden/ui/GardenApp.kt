@@ -18,7 +18,7 @@ import com.cse5236.gratitudegarden.ui.screens.GardenRoute
 import com.cse5236.gratitudegarden.ui.screens.JournalRoute
 import com.cse5236.gratitudegarden.ui.screens.LoginScreen
 import com.cse5236.gratitudegarden.ui.screens.MeScreen
-import com.cse5236.gratitudegarden.ui.screens.ShopScreen
+import com.cse5236.gratitudegarden.ui.screens.ShopRoute
 import com.cse5236.gratitudegarden.ui.screens.SignUpScreen
 import com.cse5236.gratitudegarden.ui.theme.GratitudeGardenTheme
 import com.cse5236.gratitudegarden.ui.theme.PgBgSage
@@ -78,7 +78,7 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
             modifier = Modifier.padding(inner),
         ) {
             composable("garden") { GardenRoute() }
-            composable("shop") { ShopScreen() }
+            composable("shop") { ShopRoute() }
             composable("journal") { JournalRoute() }
             composable("me") { MeScreen(onSignOut = onSignOut) }
         }

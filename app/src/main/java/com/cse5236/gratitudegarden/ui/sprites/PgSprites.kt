@@ -117,6 +117,21 @@ object PlantPalette {
 
     fun forName(name: String?): PlantColors? = name?.let { byName[it.lowercase()] }
 
+    /** Map an item slug (e.g. "seed.sunset_tulip") to its plant colours. */
+    fun forSlug(slug: String?): PlantColors {
+        val s = slug?.lowercase() ?: return Tulip
+        return when {
+            "tulip" in s -> Tulip
+            "sunflower" in s -> Sunflower
+            "lavender" in s -> Lavender
+            "rose" in s -> Rose
+            "daisy" in s -> Daisy
+            "poppy" in s -> Poppy
+            "mint" in s || "herb" in s -> Mint
+            else -> Tulip
+        }
+    }
+
     /** Deterministic colour pick when only an opaque id (e.g. item_id) is known. */
     fun forSeed(seed: String): PlantColors = all[seed.hashCode().absoluteValue % all.size]
 }
