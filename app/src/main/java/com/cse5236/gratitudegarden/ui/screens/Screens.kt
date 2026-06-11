@@ -1,4 +1,5 @@
 package com.cse5236.gratitudegarden.ui.screens
+
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.cse5236.gratitudegarden.model.GardenState
 import com.cse5236.gratitudegarden.model.addGratitudeEntry
 import com.cse5236.gratitudegarden.model.getPlantStage
@@ -35,61 +37,81 @@ enum class CurrentScreen {
     GRATITUDE_ENTRY
 }
 
+interface ClickHandler {
+    fun onClick()
+}
+
+interface SubmitEntryHandler {
+    fun onSubmit(entryText: String)
+}
+
 @Composable
 fun GratitudeGardenApp() {
     var currentScreen by remember { mutableStateOf(CurrentScreen.GARDEN) }
     var gardenState by remember { mutableStateOf(GardenState()) }
 
-    when (currentScreen) {
-        CurrentScreen.GARDEN -> {
-            GardenScreen(
-                gardenState = gardenState,
-                onWaterPlantClick = {
-                    val oldCoins = gardenState.coins
-                    val oldGrowth = gardenState.plantGrowth
+    val waterPlantHandler = object : ClickHandler {
+        override fun onClick() {
+            val oldCoins = gardenState.coins
+            val oldGrowth = gardenState.plantGrowth
 
-                    gardenState = waterPlant(gardenState)
+            gardenState = waterPlant(gardenState)
 
-                    Log.d(
-                        LogTags.APP_LOGIC,
-                        "Water plant clicked. Old coins: $oldCoins, New coins: ${gardenState.coins}, Old growth: $oldGrowth, New growth: ${gardenState.plantGrowth}"
-                    )
-                },
-                onAddEntryClick = {
-                    Log.d(LogTags.APP_LOGIC, "Navigating from Garden Screen to Gratitude Entry Screen")
-                    currentScreen = CurrentScreen.GRATITUDE_ENTRY
-                }
+            Log.d(
+                LogTags.APP_LOGIC,
+                "Water plant clicked. Old coins: $oldCoins, New coins: ${gardenState.coins}, Old growth: $oldGrowth, New growth: ${gardenState.plantGrowth}"
             )
         }
+    }
 
-        CurrentScreen.GRATITUDE_ENTRY -> {
-            GratitudeEntryScreen(
-                onSubmitEntry = { entryText ->
-                    val oldCoins = gardenState.coins
-
-                    gardenState = addGratitudeEntry(gardenState, entryText)
-
-                    Log.d(
-                        LogTags.APP_LOGIC,
-                        "Gratitude entry submitted. Entry: $entryText, Old coins: $oldCoins, New coins: ${gardenState.coins}"
-                    )
-
-                    currentScreen = CurrentScreen.GARDEN
-                },
-                onBackClick = {
-                    Log.d(LogTags.APP_LOGIC, "Navigating from Gratitude Entry Screen back to Garden Screen")
-                    currentScreen = CurrentScreen.GARDEN
-                }
-            )
+    val addEntryHandler = object : ClickHandler {
+        override fun onClick() {
+            Log.d(LogTags.APP_LOGIC, "Navigating from Garden Screen to Gratitude Entry Screen")
+            currentScreen = CurrentScreen.GRATITUDE_ENTRY
         }
+    }
+
+    val submitEntryHandler = object : SubmitEntryHandler {
+        override fun onSubmit(entryText: String) {
+            val oldCoins = gardenState.coins
+
+            gardenState = addGratitudeEntry(gardenState, entryText)
+
+            Log.d(
+                LogTags.APP_LOGIC,
+                "Gratitude entry submitted. Entry: $entryText, Old coins: $oldCoins, New coins: ${gardenState.coins}"
+            )
+
+            currentScreen = CurrentScreen.GARDEN
+        }
+    }
+
+    val backHandler = object : ClickHandler {
+        override fun onClick() {
+            Log.d(LogTags.APP_LOGIC, "Navigating from Gratitude Entry Screen back to Garden Screen")
+            currentScreen = CurrentScreen.GARDEN
+        }
+    }
+
+    if (currentScreen == CurrentScreen.GARDEN) {
+        GardenScreen(
+            gardenState = gardenState,
+            waterPlantHandler = waterPlantHandler,
+            addEntryHandler = addEntryHandler
+        )
+    } else {
+        GratitudeEntryScreen(
+            submitEntryHandler = submitEntryHandler,
+            backHandler = backHandler
+        )
     }
 }
 
 @Composable
 fun GardenScreen(
     gardenState: GardenState,
-    onWaterPlantClick: () -> Unit,
-    onAddEntryClick: () -> Unit
+    waterPlantHandler: ClickHandler,
+    addEntryHandler: ClickHandler
 ) {
     LogComposableLifecycle(LogTags.GARDEN_SCREEN)
 
@@ -127,7 +149,9 @@ fun GardenScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         Button(
-            onClick = onWaterPlantClick,
+            onClick = {
+                waterPlantHandler.onClick()
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = "Water Plant - Costs 3 Coins")
@@ -136,7 +160,9 @@ fun GardenScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(
-            onClick = onAddEntryClick,
+            onClick = {
+                addEntryHandler.onClick()
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = "Add Gratitude Entry")
@@ -146,8 +172,8 @@ fun GardenScreen(
 
 @Composable
 fun GratitudeEntryScreen(
-    onSubmitEntry: (String) -> Unit,
-    onBackClick: () -> Unit
+    submitEntryHandler: SubmitEntryHandler,
+    backHandler: ClickHandler
 ) {
     LogComposableLifecycle(LogTags.ENTRY_SCREEN)
 
@@ -168,8 +194,8 @@ fun GratitudeEntryScreen(
 
         OutlinedTextField(
             value = entryText,
-            onValueChange = { newText ->
-                entryText = newText
+            onValueChange = {
+                entryText = it
                 Log.d(LogTags.APP_LOGIC, "Entry text changed: $entryText")
             },
             label = {
@@ -182,7 +208,7 @@ fun GratitudeEntryScreen(
 
         Button(
             onClick = {
-                onSubmitEntry(entryText)
+                submitEntryHandler.onSubmit(entryText)
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -192,7 +218,9 @@ fun GratitudeEntryScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(
-            onClick = onBackClick,
+            onClick = {
+                backHandler.onClick()
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(text = "Back to Garden")
@@ -211,15 +239,23 @@ fun LogComposableLifecycle(tag: String) {
     DisposableEffect(lifecycleOwner) {
         Log.d(tag, "DisposableEffect started. Screen is active.")
 
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_CREATE -> Log.d(tag, "onCreate called")
-                Lifecycle.Event.ON_START -> Log.d(tag, "onStart called")
-                Lifecycle.Event.ON_RESUME -> Log.d(tag, "onResume called")
-                Lifecycle.Event.ON_PAUSE -> Log.d(tag, "onPause called")
-                Lifecycle.Event.ON_STOP -> Log.d(tag, "onStop called")
-                Lifecycle.Event.ON_DESTROY -> Log.d(tag, "onDestroy called")
-                else -> Log.d(tag, "Other lifecycle event: $event")
+        val observer = object : LifecycleEventObserver {
+            override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+                if (event == Lifecycle.Event.ON_CREATE) {
+                    Log.d(tag, "onCreate called")
+                } else if (event == Lifecycle.Event.ON_START) {
+                    Log.d(tag, "onStart called")
+                } else if (event == Lifecycle.Event.ON_RESUME) {
+                    Log.d(tag, "onResume called")
+                } else if (event == Lifecycle.Event.ON_PAUSE) {
+                    Log.d(tag, "onPause called")
+                } else if (event == Lifecycle.Event.ON_STOP) {
+                    Log.d(tag, "onStop called")
+                } else if (event == Lifecycle.Event.ON_DESTROY) {
+                    Log.d(tag, "onDestroy called")
+                } else {
+                    Log.d(tag, "Other lifecycle event: $event")
+                }
             }
         }
 
