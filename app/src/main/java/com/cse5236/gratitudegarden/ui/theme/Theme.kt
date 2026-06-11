@@ -1,57 +1,39 @@
 package com.cse5236.gratitudegarden.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+// Positivity Garden is a warm, light, illustrated experience. We use a fixed
+// light scheme built from the PG palette rather than Material dynamic color so
+// the garden greens read consistently across devices.
+private val GardenLightColors = lightColorScheme(
+    primary = PgPrimary,
+    onPrimary = PgBgCream,
+    primaryContainer = PgMoss,
+    onPrimaryContainer = PgPrimaryDeep,
+    secondary = PgAccent,
+    onSecondary = PgBgCream,
+    background = PgBgSage,
+    onBackground = PgInk,
+    surface = PgBgCream,
+    onSurface = PgInk,
+    surfaceVariant = PgMoss,
+    onSurfaceVariant = PgInkSoft,
+    outline = PgMoss,
 )
 
 @Composable
 fun GratitudeGardenTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
+    // Onboarding (and the rest of the app, for now) is designed in the "day"
+    // palette, so we stay light regardless of the system setting.
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = GardenLightColors,
         typography = Typography,
-        content = content
+        content = content,
     )
 }
