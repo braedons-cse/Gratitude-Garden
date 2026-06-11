@@ -1,7 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
+
+// Read Supabase keys from local.properties (gitignored) so they aren't committed.
+val localProperties = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(key: String, fallback: String = ""): String =
+    localProperties.getProperty(key) ?: System.getenv(key) ?: fallback
 
 android {
     namespace = "com.cse5236.gratitudegarden"
@@ -19,6 +30,15 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField(
+            "String", "SUPABASE_URL",
+            "\"${secret("SUPABASE_URL", "https://aprqarsmrtosvzisvqhw.supabase.co")}\"",
+        )
+        buildConfigField(
+            "String", "SUPABASE_ANON_KEY",
+            "\"${secret("SUPABASE_ANON_KEY")}\"",
+        )
     }
 
     buildTypes {
@@ -36,6 +56,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -48,6 +69,18 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // Navigation + lifecycle-aware Compose state collection / viewModel()
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+
+    // Supabase (auth + postgrest) over Ktor, using kotlinx-serialization
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.auth)
+    implementation(libs.supabase.postgrest)
+    implementation(libs.ktor.client.okhttp)
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
