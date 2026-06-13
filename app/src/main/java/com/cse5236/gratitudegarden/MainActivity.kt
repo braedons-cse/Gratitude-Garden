@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        Log.d(LogTags.LIFECYCLE, "MainActivity onCreate()")
+        Log.d(LogTags.MAIN_ACTIVITY, "MainActivity onCreate()")
 
         setContent {
             GratitudeGardenApp()
@@ -22,26 +22,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        Log.d(LogTags.LIFECYCLE, "MainActivity onStart()")
+        Log.d(LogTags.MAIN_ACTIVITY, "MainActivity onStart()")
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d(LogTags.LIFECYCLE, "MainActivity onResume()")
+        Log.d(LogTags.MAIN_ACTIVITY, "MainActivity onResume()")
     }
 
     override fun onPause() {
         super.onPause()
-        Log.d(LogTags.LIFECYCLE, "MainActivity onPause()")
+        Log.d(LogTags.MAIN_ACTIVITY, "MainActivity onPause()")
     }
 
     override fun onStop() {
         super.onStop()
-        Log.d(LogTags.LIFECYCLE, "MainActivity onStop()")
+        Log.d(LogTags.MAIN_ACTIVITY, "MainActivity onStop()")
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(LogTags.LIFECYCLE, "MainActivity onDestroy()")
+        Log.d(LogTags.MAIN_ACTIVITY, "MainActivity onDestroy()")
     }
 }

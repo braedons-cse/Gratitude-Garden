@@ -22,6 +22,8 @@ import com.cse5236.gratitudegarden.ui.screens.ShopRoute
 import com.cse5236.gratitudegarden.ui.screens.SignUpScreen
 import com.cse5236.gratitudegarden.ui.theme.GratitudeGardenTheme
 import com.cse5236.gratitudegarden.ui.theme.PgBgSage
+import com.cse5236.gratitudegarden.util.LogComposableLifecycle
+import com.cse5236.gratitudegarden.util.LogTags
 import io.github.jan.supabase.auth.status.SessionStatus
 
 @Composable
@@ -46,6 +48,7 @@ private fun AuthNav(authVm: AuthViewModel) {
     val ui by authVm.ui.collectAsStateWithLifecycle()
     NavHost(navController = nav, startDestination = "login") {
         composable("login") {
+            LogComposableLifecycle(LogTags.LOGIN_SCREEN)
             LoginScreen(
                 onLogIn = authVm::signIn,
                 onSignUp = { authVm.clearError(); nav.navigate("signup") },
@@ -55,6 +58,7 @@ private fun AuthNav(authVm: AuthViewModel) {
             )
         }
         composable("signup") {
+            LogComposableLifecycle(LogTags.SIGNUP_SCREEN)
             SignUpScreen(
                 onSignUp = authVm::signUp,
                 onBackToLogin = { authVm.clearError(); nav.popBackStack() },

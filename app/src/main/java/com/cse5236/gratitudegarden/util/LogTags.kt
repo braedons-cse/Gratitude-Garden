@@ -8,6 +8,8 @@ object LogTags {
 
     // Compose-lifecycle logging (see util.LogComposableLifecycle)
     const val MAIN_ACTIVITY = "MainActivityLifecycle"
+    const val LOGIN_SCREEN = "LoginScreenLifecycle"
+    const val SIGNUP_SCREEN = "SignUpScreenLifecycle"
     const val GARDEN_SCREEN = "GardenScreenLifecycle"
     const val JOURNAL_SCREEN = "JournalScreenLifecycle"
     const val ENTRY_SCREEN = "EntryScreenLifecycle"
