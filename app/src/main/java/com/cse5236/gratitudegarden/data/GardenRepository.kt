@@ -57,6 +57,7 @@ data class ProfileRow(
     @SerialName("display_name") val displayName: String = "",
     val level: Int = 1,
     val xp: Int = 0,
+    @SerialName("is_admin") val isAdmin: Boolean = false,
 )
 
 @Serializable

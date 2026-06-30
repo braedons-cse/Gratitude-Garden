@@ -17,3 +17,4 @@ local.properties
 # Local Claude Code / MCP tooling config (not shared)
 .claude/
 .mcp.json
+claude-admin-dashboard-brief.md

@@ -14,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.cse5236.gratitudegarden.ui.auth.AuthViewModel
 import com.cse5236.gratitudegarden.ui.components.BottomNav
+import com.cse5236.gratitudegarden.ui.screens.AdminDashboardScreen
 import com.cse5236.gratitudegarden.ui.screens.GardenRoute
 import com.cse5236.gratitudegarden.ui.screens.JournalRoute
 import com.cse5236.gratitudegarden.ui.screens.LoginScreen
@@ -84,7 +85,13 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
             composable("garden") { GardenRoute() }
             composable("shop") { ShopRoute() }
             composable("journal") { JournalRoute() }
-            composable("me") { MeScreen(onSignOut = onSignOut) }
+            composable("me") {
+                MeScreen(
+                    onSignOut = onSignOut,
+                    onOpenAdmin = { nav.navigate("admin") },
+                )
+            }
+            composable("admin") { AdminDashboardScreen(onBack = { nav.popBackStack() }) }
         }
     }
 }

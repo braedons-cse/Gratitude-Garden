@@ -2,6 +2,7 @@ package com.cse5236.gratitudegarden.di
 
 import android.content.Context
 import com.cse5236.gratitudegarden.BuildConfig
+import com.cse5236.gratitudegarden.data.AdminRepository
 import com.cse5236.gratitudegarden.data.GardenRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
@@ -33,4 +34,5 @@ class AppContainer(@Suppress("unused") private val context: Context) {
     }
 
     val gardenRepository: GardenRepository by lazy { GardenRepository(supabase) }
+    val adminRepository: AdminRepository by lazy { AdminRepository(supabase) }
 }

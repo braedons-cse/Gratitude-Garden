@@ -19,6 +19,7 @@ data class MeUiState(
     val coins: Int = 0,
     val streak: Int = 0,
     val totalEntries: Int = 0,
+    val isAdmin: Boolean = false,
 )
 
 class MeViewModel(private val repo: GardenRepository) : ViewModel() {
@@ -40,6 +41,7 @@ class MeViewModel(private val repo: GardenRepository) : ViewModel() {
                         coins = wallet?.balance ?: 0,
                         streak = stats?.currentStreak ?: 0,
                         totalEntries = stats?.totalEntries ?: 0,
+                        isAdmin = profile?.isAdmin ?: false,
                     )
                 }
             } catch (_: Exception) {

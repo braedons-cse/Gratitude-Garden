@@ -43,7 +43,7 @@ import com.cse5236.gratitudegarden.ui.theme.PgMoss
 import com.cse5236.gratitudegarden.ui.theme.PgPrimaryDeep
 
 @Composable
-fun MeScreen(onSignOut: () -> Unit) {
+fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     val vm: MeViewModel = viewModel(factory = MeViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
 
@@ -100,6 +100,17 @@ fun MeScreen(onSignOut: () -> Unit) {
         }
 
         Spacer(Modifier.weight(1f))
+
+        // Admin-only entry point. Hidden entirely for normal users.
+        if (ui.isAdmin) {
+            PillButton(
+                text = "Admin Dashboard",
+                onClick = onOpenAdmin,
+                primary = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+        }
 
         PillButton(
             text = "Log out",
