@@ -133,28 +133,60 @@ class GardenRepository(private val client: SupabaseClient) {
         )
     }
 
-    // ── Reads (RLS auto-scopes to the signed-in user) ────────────────
-    suspend fun entries(): List<GratitudeEntry> =
-        client.postgrest.from("gratitude_entries").select().decodeList<GratitudeEntry>()
+    // ── Reads ────────────────────────────────────────────────────────
+    // These MUST filter by the signed-in user id explicitly — do NOT rely on
+    // RLS to return a single row. Admins have additive "read any row" policies
+    // (for the admin dashboard), so an unfiltered select returns EVERY user's
+    // row and firstOrNull() would grab an arbitrary account (e.g. someone
+    // else's profile). Always scope reads to the current uid.
+    private fun currentUid(): String? = client.auth.currentUserOrNull()?.id
+
+    suspend fun entries(): List<GratitudeEntry> {
+        val uid = currentUid() ?: return emptyList()
+        return client.postgrest.from("gratitude_entries").select {
+            filter { eq("user_id", uid) }
+        }.decodeList<GratitudeEntry>()
             .filter { it.deletedAt == null }
             .sortedByDescending { it.createdAt }
+    }
 
-    suspend fun garden(): Garden? =
-        client.postgrest.from("gardens").select().decodeList<Garden>().firstOrNull()
+    suspend fun garden(): Garden? {
+        val uid = currentUid() ?: return null
+        return client.postgrest.from("gardens").select {
+            filter { eq("user_id", uid) }
+        }.decodeList<Garden>().firstOrNull()
+    }
 
-    suspend fun plants(): List<GardenPlantRow> =
-        client.postgrest.from("garden_plants").select().decodeList<GardenPlantRow>()
+    suspend fun plants(): List<GardenPlantRow> {
+        val gardenId = garden()?.id ?: return emptyList()
+        return client.postgrest.from("garden_plants").select {
+            filter { eq("garden_id", gardenId) }
+        }.decodeList<GardenPlantRow>()
+    }
 
-    suspend fun stats(): UserStatsRow? =
-        client.postgrest.from("user_stats").select().decodeList<UserStatsRow>().firstOrNull()
+    suspend fun stats(): UserStatsRow? {
+        val uid = currentUid() ?: return null
+        return client.postgrest.from("user_stats").select {
+            filter { eq("user_id", uid) }
+        }.decodeList<UserStatsRow>().firstOrNull()
+    }
 
-    suspend fun wallet(): WalletRow? =
-        client.postgrest.from("coin_wallets").select().decodeList<WalletRow>().firstOrNull()
+    suspend fun wallet(): WalletRow? {
+        val uid = currentUid() ?: return null
+        return client.postgrest.from("coin_wallets").select {
+            filter { eq("user_id", uid) }
+        }.decodeList<WalletRow>().firstOrNull()
+    }
 
-    suspend fun profile(): ProfileRow? =
-        client.postgrest.from("profiles").select().decodeList<ProfileRow>().firstOrNull()
+    suspend fun profile(): ProfileRow? {
+        val uid = currentUid() ?: return null
+        return client.postgrest.from("profiles").select {
+            filter { eq("id", uid) }
+        }.decodeList<ProfileRow>().firstOrNull()
+    }
 
     // ── Shop / inventory / garden interactions ───────────────────────
+    // items is a global catalog (same rows for everyone), so no uid filter.
     suspend fun items(category: String): List<Item> =
         client.postgrest.from("items").select().decodeList<Item>()
             .filter { it.category == category }
@@ -165,9 +197,12 @@ class GardenRepository(private val client: SupabaseClient) {
         client.postgrest.from("items").select().decodeList<Item>()
             .associate { it.id to it.slug }
 
-    suspend fun inventory(): Set<String> =
-        client.postgrest.from("user_inventory").select().decodeList<InventoryRow>()
-            .map { it.itemId }.toSet()
+    suspend fun inventory(): Set<String> {
+        val uid = currentUid() ?: return emptySet()
+        return client.postgrest.from("user_inventory").select {
+            filter { eq("user_id", uid) }
+        }.decodeList<InventoryRow>().map { it.itemId }.toSet()
+    }
 
     suspend fun purchaseItem(itemId: String) {
         client.postgrest.rpc("purchase_item", buildJsonObject { put("p_item_id", itemId) })
