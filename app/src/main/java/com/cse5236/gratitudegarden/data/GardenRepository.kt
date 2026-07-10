@@ -103,6 +103,30 @@ class GardenRepository(private val client: SupabaseClient) {
 
     suspend fun signOut() = client.auth.signOut()
 
+    /**
+     * Permanently delete the signed-in user's own account.
+     *
+     * [password] is re-verified by signing in again (a wrong password throws
+     * here, before anything is deleted). The `delete_current_user` RPC then
+     * removes the row in auth.users server-side; the ON DELETE CASCADE foreign
+     * keys wipe every owned row (profile, settings, stats, wallet, entries,
+     * garden + plants, inventory). Finally the now-defunct local session is
+     * cleared so the app returns to the auth screen.
+     */
+    suspend fun deleteOwnAccount(password: String) {
+        val email = client.auth.currentUserOrNull()?.email
+            ?: throw IllegalStateException("No signed-in account.")
+        // Re-authenticate to confirm the password belongs to this account.
+        client.auth.signInWith(Email) {
+            this.email = email
+            this.password = password
+        }
+        client.postgrest.rpc("delete_current_user")
+        // The session's user no longer exists; drop it locally regardless of the
+        // server round-trip so sessionStatus flips to NotAuthenticated.
+        runCatching { client.auth.signOut() }
+    }
+
     // ── Gratitude entries (RPCs) ─────────────────────────────────────
     // rpc() takes a JsonObject of the function's named args.
     suspend fun submitEntry(text: String, voice: Boolean) {

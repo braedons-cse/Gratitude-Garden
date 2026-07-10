@@ -3,6 +3,8 @@ package com.cse5236.gratitudegarden.data
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Admin-only data access. Every call still goes through the anon key + the
@@ -51,5 +53,15 @@ class AdminRepository(private val client: SupabaseClient) {
         pg.from(table).delete {
             filter { pk.forEach { (k, v) -> eq(k, v) } }
         }
+    }
+
+    /**
+     * Fully delete a user account: removes the auth.users row (via the
+     * admin_delete_user RPC), which cascades to every owned table. Unlike
+     * [delete] on the `profiles` table — which only removes that one child row
+     * and leaves the login intact — this actually wipes the account.
+     */
+    suspend fun deleteUserAccount(userId: String) {
+        pg.rpc("admin_delete_user", buildJsonObject { put("p_user_id", userId) })
     }
 }

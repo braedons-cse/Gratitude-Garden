@@ -7,6 +7,31 @@ through the official Supabase Kotlin client using the **anon key** only.
 
 ---
 
+## 🆕 Latest changes — Account deletion
+
+Users can now **delete their own account**, and account deletion is now *complete*
+— it removes the login and wipes every associated row.
+
+- **Self-service delete (Me screen):** an understated red **"Delete account"**
+  button under *Log out* opens a **two-step confirmation** — an "are you sure,
+  this can't be undone" warning, then a **password prompt**. The password is
+  re-verified (a wrong password aborts before anything is deleted). On success
+  the session clears and the app returns to the login screen.
+- **Complete wipe:** deletion now removes the `auth.users` row, and the existing
+  `ON DELETE CASCADE` foreign keys erase everything owned by the account
+  (profile, settings, stats, wallet, entries, garden + plants, inventory). The
+  user can no longer log in and no data is left behind.
+- **Admin dashboard "Danger zone":** admins get a real *Delete entire account*
+  action per user (via `admin_delete_user`), replacing the old behaviour that
+  only removed the `profiles` row and orphaned the login.
+- **Backend (`db/account_deletion.sql`):** two `SECURITY DEFINER` RPCs —
+  `delete_current_user()` (self) and `admin_delete_user(uuid)` (admin-gated by
+  `is_current_user_admin()`). Both pin `search_path` and are executable only by
+  `authenticated`. Consistent with the project's model: **no service-role key
+  ever ships in the app.**
+
+---
+
 ## Table of contents
 
 - [Tech stack](#tech-stack)

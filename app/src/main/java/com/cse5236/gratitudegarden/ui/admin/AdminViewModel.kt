@@ -120,6 +120,29 @@ class AdminViewModel(private val repo: AdminRepository) : ViewModel() {
         "Deleted from ${spec.title}"
     }
 
+    /** Fully delete a user's account (auth row + all owned data via cascade). */
+    fun deleteUserAccount(user: AdminUser) {
+        if (_ui.value.busy) return
+        _ui.update { it.copy(busy = true) }
+        viewModelScope.launch {
+            try {
+                repo.deleteUserAccount(user.id)
+                _ui.update {
+                    it.copy(
+                        busy = false,
+                        selectedUserId = null,
+                        userTables = emptyMap(),
+                        gardenId = null,
+                        message = "Deleted account: ${user.displayName}",
+                    )
+                }
+                refreshAll()
+            } catch (e: Exception) {
+                _ui.update { it.copy(busy = false, message = friendly(e)) }
+            }
+        }
+    }
+
     /** Owner columns the editor doesn't expose, injected on insert. */
     private fun ownerExtra(spec: AdminTableSpec): Map<String, JsonElement> {
         val sel = _ui.value.selectedUserId

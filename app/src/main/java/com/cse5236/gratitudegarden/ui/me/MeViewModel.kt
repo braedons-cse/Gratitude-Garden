@@ -20,6 +20,8 @@ data class MeUiState(
     val streak: Int = 0,
     val totalEntries: Int = 0,
     val isAdmin: Boolean = false,
+    val deleting: Boolean = false,
+    val deleteError: String? = null,
 )
 
 class MeViewModel(private val repo: GardenRepository) : ViewModel() {
@@ -47,6 +49,38 @@ class MeViewModel(private val repo: GardenRepository) : ViewModel() {
             } catch (_: Exception) {
                 _ui.update { it.copy(loading = false) }
             }
+        }
+    }
+
+    /**
+     * Permanently delete the signed-in account after the user has confirmed
+     * twice and entered [password]. On success the Supabase session is cleared,
+     * so [GratitudeGardenApp] auto-navigates back to the login screen — no
+     * explicit navigation needed here.
+     */
+    fun deleteAccount(password: String) {
+        if (_ui.value.deleting) return
+        _ui.update { it.copy(deleting = true, deleteError = null) }
+        viewModelScope.launch {
+            try {
+                repo.deleteOwnAccount(password)
+                // Session gone → the app swaps to the auth flow.
+            } catch (e: Exception) {
+                _ui.update { it.copy(deleting = false, deleteError = friendlyDeleteError(e)) }
+            }
+        }
+    }
+
+    fun clearDeleteError() {
+        if (_ui.value.deleteError != null) _ui.update { it.copy(deleteError = null) }
+    }
+
+    private fun friendlyDeleteError(e: Exception): String {
+        val m = e.message ?: return "Couldn't delete your account. Please try again."
+        return when {
+            "Invalid login credentials" in m || "invalid_credentials" in m ||
+                "invalid_grant" in m -> "Incorrect password."
+            else -> "Couldn't delete your account. Please try again."
         }
     }
 

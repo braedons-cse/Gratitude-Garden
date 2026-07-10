@@ -148,6 +148,14 @@ fun AdminDashboardScreen(onBack: () -> Unit) {
                             onDelete = { vm.delete(spec, it) },
                         )
                     }
+
+                    ui.users.firstOrNull { it.id == ui.selectedUserId }?.let { selected ->
+                        DeleteAccountCard(
+                            user = selected,
+                            busy = ui.busy,
+                            onConfirm = { vm.deleteUserAccount(selected) },
+                        )
+                    }
                 }
             }
         }
@@ -407,6 +415,51 @@ private fun UserRow(user: AdminUser, selected: Boolean, onClick: () -> Unit) {
                 Text("ADMIN", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, color = Color.White)
             }
         }
+    }
+}
+
+/** Danger-zone card: fully delete the selected user's account (auth + cascade). */
+@Composable
+private fun DeleteAccountCard(user: AdminUser, busy: Boolean, onConfirm: () -> Unit) {
+    var confirm by remember { mutableStateOf(false) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(PgAccent.copy(alpha = 0.10f))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(text = "Danger zone", fontFamily = Caprasimo, fontSize = 18.sp, color = PgAccent)
+        Text(
+            text = "Permanently delete ${user.displayName}'s account. The login and every row " +
+                "above (profile, settings, stats, wallet, entries, garden, inventory) are wiped " +
+                "via cascade. This can't be undone.",
+            fontFamily = Nunito,
+            fontSize = 12.sp,
+            color = PgInkSoft,
+        )
+        OutlinedButton(
+            onClick = { confirm = true },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Delete entire account", color = PgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+        }
+    }
+
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Delete ${user.displayName}'s account?") },
+            text = { Text("This removes the auth login and cascades to every owned row. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirm = false; onConfirm() }) {
+                    Text("Delete account", color = PgAccent)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
+        )
     }
 }
 
