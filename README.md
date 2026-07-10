@@ -1,4 +1,4 @@
-# Gratitude Garden 🌱
+# Gratitude Garden 
 
 An Android (Kotlin + Jetpack Compose) gratitude-journaling game for **CSE 5236**.
 Users write daily gratitude entries, earn coins, and grow a personal garden.
@@ -7,7 +7,7 @@ through the official Supabase Kotlin client using the **anon key** only.
 
 ---
 
-## 🆕 Latest changes — Account deletion
+## Latest changes — Account deletion
 
 Users can now **delete their own account**, and account deletion is now *complete*
 — it removes the login and wipes every associated row.
@@ -73,8 +73,8 @@ app/src/main/java/com/cse5236/gratitudegarden/
 │  └─ AppContainer.kt              # SupabaseClient + repositories (manual DI)
 ├─ data/
 │  ├─ GardenRepository.kt          # user-facing reads + RPC calls (auth, journal, garden, shop)
-│  ├─ AdminModels.kt               # ⭐ admin table-spec engine + payload builder
-│  └─ AdminRepository.kt           # ⭐ generic admin CRUD over JsonObject + admin check
+│  ├─ AdminModels.kt               # admin table-spec engine + payload builder
+│  └─ AdminRepository.kt           # generic admin CRUD over JsonObject + admin check
 ├─ ui/
 │  ├─ GardenApp.kt                 # top-level nav: auth flow vs HomeScaffold + routes
 │  ├─ ViewModelExt.kt              # CreationExtras -> repositories
@@ -83,18 +83,15 @@ app/src/main/java/com/cse5236/gratitudegarden/
 │  ├─ sprites/                     # vector plant / icon drawing
 │  ├─ garden/ shop/ journal/ me/   # feature ViewModels + UI state
 │  ├─ admin/
-│  │  └─ AdminViewModel.kt         # ⭐ AdminUiState + create/save/delete actions
+│  │  └─ AdminViewModel.kt         # adminUiState + create/save/delete actions
 │  └─ screens/
 │     ├─ GardenScreen.kt ShopScreen.kt JournalScreen.kt MeScreen.kt
 │     ├─ LoginScreen.kt SignUpScreen.kt
-│     └─ AdminDashboardScreen.kt   # ⭐ the admin dashboard UI
+│     └─ AdminDashboardScreen.kt   # the admin dashboard UI
 └─ util/                           # lifecycle logging helpers
 db/
-└─ admin_dashboard.sql             # ⭐ version-controlled copy of the Supabase admin migration
+└─ admin_dashboard.sql             # version-controlled copy of the Supabase admin migration
 ```
-
-⭐ = added/changed for the Checkpoint 4 admin dashboard.
-
 ---
 
 ## App architecture
