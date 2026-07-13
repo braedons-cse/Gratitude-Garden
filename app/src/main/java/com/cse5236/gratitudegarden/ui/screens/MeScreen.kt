@@ -1,5 +1,12 @@
 package com.cse5236.gratitudegarden.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,12 +19,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,12 +40,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cse5236.gratitudegarden.ui.components.PgTextField
@@ -50,16 +69,58 @@ import com.cse5236.gratitudegarden.ui.theme.PgInk
 import com.cse5236.gratitudegarden.ui.theme.PgInkMuted
 import com.cse5236.gratitudegarden.ui.theme.PgInkSoft
 import com.cse5236.gratitudegarden.ui.theme.PgMoss
+import com.cse5236.gratitudegarden.ui.theme.PgPrimary
 import com.cse5236.gratitudegarden.ui.theme.PgPrimaryDeep
 
 @Composable
 fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     val vm: MeViewModel = viewModel(factory = MeViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     // 0 = hidden, 1 = "are you sure" warning, 2 = password confirmation.
     var deleteStep by remember { mutableStateOf(0) }
     var password by remember { mutableStateOf("") }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    // Re-check the OS notification toggle whenever we come back to the foreground
+    // (e.g. the user just toggled it in system settings).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.refreshOsNotificationState()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Android 13+: enabling the switch may require the runtime grant first.
+    val notifPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ ->
+        // Turn on regardless — the worker no-ops without the grant and the card
+        // below shows the "notifications are off" hint if it was denied.
+        vm.setReminderEnabled(true)
+        vm.refreshOsNotificationState()
+    }
+
+    fun onToggleReminder(enabled: Boolean) {
+        if (!enabled) {
+            vm.setReminderEnabled(false)
+            return
+        }
+        val needsGrant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsGrant) notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else vm.setReminderEnabled(true)
+    }
+
+    fun openOsNotificationSettings() {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        context.startActivity(intent)
+    }
 
     fun cancelDelete() {
         deleteStep = 0
@@ -75,6 +136,18 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     ) {
         Text(text = "Me", fontFamily = Caprasimo, fontSize = 28.sp, color = PgPrimaryDeep)
         Spacer(Modifier.height(16.dp))
+
+        // Notification settings — kept at the very top of the page.
+        NotificationSettingsCard(
+            enabled = ui.reminderEnabled,
+            hour = ui.reminderHour,
+            minute = ui.reminderMinute,
+            osEnabled = ui.osNotificationsEnabled,
+            onToggle = { onToggleReminder(it) },
+            onPickTime = { showTimePicker = true },
+            onOpenOsSettings = { openOsNotificationSettings() },
+        )
+        Spacer(Modifier.height(20.dp))
 
         // Profile row
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -233,6 +306,160 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             },
         )
     }
+
+    if (showTimePicker) {
+        ReminderTimePickerDialog(
+            initialHour = ui.reminderHour,
+            initialMinute = ui.reminderMinute,
+            onConfirm = { h, m -> vm.setReminderTime(h, m); showTimePicker = false },
+            onDismiss = { showTimePicker = false },
+        )
+    }
+}
+
+// ── Notification settings card (top of the Me page) ──────────────────────
+@Composable
+private fun NotificationSettingsCard(
+    enabled: Boolean,
+    hour: Int,
+    minute: Int,
+    osEnabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onPickTime: () -> Unit,
+    onOpenOsSettings: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(38.dp).clip(CircleShape).background(PgMoss),
+                contentAlignment = Alignment.Center,
+            ) {
+                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 20.dp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Daily reminder",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = PgInk,
+                )
+                Text(
+                    "A nudge to keep your gratitude streak",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.5.sp,
+                    color = PgInkSoft,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = PgPrimary,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = PgInkMuted,
+                ),
+            )
+        }
+
+        // Time-of-day row — tappable when reminders are enabled.
+        val timeColor = if (enabled) PgPrimaryDeep else PgInkMuted
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .then(if (enabled) Modifier.clickable(onClick = onPickTime) else Modifier)
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Reminder time",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = if (enabled) PgInk else PgInkMuted,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                formatTime(hour, minute),
+                fontFamily = Nunito,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp,
+                color = timeColor,
+            )
+        }
+
+        if (enabled && !osEnabled) {
+            Text(
+                "Notifications are off for Gratitude Garden in your system settings, " +
+                    "so reminders won't appear. Tap to open settings.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.5.sp,
+                color = PgAccent,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenOsSettings)
+                    .padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderTimePickerDialog(
+    initialHour: Int,
+    initialMinute: Int,
+    onConfirm: (Int, Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val state = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = false,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reminder time", fontFamily = Caprasimo, color = PgInk) },
+        text = {
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                TimePicker(state = state)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(state.hour, state.minute) }) {
+                Text("Set", color = PgPrimaryDeep, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = PgInkSoft, fontFamily = Nunito)
+            }
+        },
+    )
+}
+
+/** 24h hour/minute → "8:00 PM" (locale-independent). */
+private fun formatTime(hour: Int, minute: Int): String {
+    val h12 = when {
+        hour == 0 -> 12
+        hour > 12 -> hour - 12
+        else -> hour
+    }
+    val amPm = if (hour < 12) "AM" else "PM"
+    return "%d:%02d %s".format(h12, minute, amPm)
 }
 
 @Composable

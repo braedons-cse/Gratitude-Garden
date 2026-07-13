@@ -1,10 +1,15 @@
 package com.cse5236.gratitudegarden.ui.me
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cse5236.gratitudegarden.data.GardenRepository
+import com.cse5236.gratitudegarden.notifications.ReminderNotifications
+import com.cse5236.gratitudegarden.notifications.ReminderPreferences
+import com.cse5236.gratitudegarden.notifications.ReminderScheduler
+import com.cse5236.gratitudegarden.ui.gardenApp
 import com.cse5236.gratitudegarden.ui.repo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,12 +27,23 @@ data class MeUiState(
     val isAdmin: Boolean = false,
     val deleting: Boolean = false,
     val deleteError: String? = null,
+    // Reminder settings (stored locally on-device via ReminderPreferences).
+    val reminderEnabled: Boolean = false,
+    val reminderHour: Int = 20,
+    val reminderMinute: Int = 0,
+    // Whether the OS will actually let our notifications through.
+    val osNotificationsEnabled: Boolean = true,
 )
 
-class MeViewModel(private val repo: GardenRepository) : ViewModel() {
+class MeViewModel(
+    private val repo: GardenRepository,
+    private val appContext: Context,
+) : ViewModel() {
 
     private val _ui = MutableStateFlow(MeUiState())
     val ui: StateFlow<MeUiState> = _ui.asStateFlow()
+
+    private val reminderPrefs = ReminderPreferences(appContext)
 
     init {
         viewModelScope.launch {
@@ -35,6 +51,7 @@ class MeViewModel(private val repo: GardenRepository) : ViewModel() {
                 val profile = repo.profile()
                 val wallet = repo.wallet()
                 val stats = repo.stats()
+                val reminder = reminderPrefs.current()
                 _ui.update {
                     it.copy(
                         loading = false,
@@ -44,10 +61,46 @@ class MeViewModel(private val repo: GardenRepository) : ViewModel() {
                         streak = stats?.currentStreak ?: 0,
                         totalEntries = stats?.totalEntries ?: 0,
                         isAdmin = profile?.isAdmin ?: false,
+                        reminderEnabled = reminder.enabled,
+                        reminderHour = reminder.hour,
+                        reminderMinute = reminder.minute,
+                        osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
                     )
                 }
             } catch (_: Exception) {
                 _ui.update { it.copy(loading = false) }
+            }
+        }
+    }
+
+    /** Re-read the OS notification state — call when returning to the screen. */
+    fun refreshOsNotificationState() {
+        _ui.update {
+            it.copy(osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext))
+        }
+    }
+
+    /** Toggle the daily reminder on/off. Enabling schedules; disabling cancels. */
+    fun setReminderEnabled(enabled: Boolean) {
+        _ui.update { it.copy(reminderEnabled = enabled) }
+        viewModelScope.launch {
+            reminderPrefs.setEnabled(enabled)
+            if (enabled) {
+                val s = reminderPrefs.current()
+                ReminderScheduler.schedule(appContext, s.hour, s.minute)
+            } else {
+                ReminderScheduler.cancel(appContext)
+            }
+        }
+    }
+
+    /** Change the time-of-day; re-arms the schedule when reminders are enabled. */
+    fun setReminderTime(hour: Int, minute: Int) {
+        _ui.update { it.copy(reminderHour = hour, reminderMinute = minute) }
+        viewModelScope.launch {
+            reminderPrefs.setTime(hour, minute)
+            if (_ui.value.reminderEnabled) {
+                ReminderScheduler.schedule(appContext, hour, minute)
             }
         }
     }
@@ -85,6 +138,6 @@ class MeViewModel(private val repo: GardenRepository) : ViewModel() {
     }
 
     companion object {
-        val Factory = viewModelFactory { initializer { MeViewModel(repo()) } }
+        val Factory = viewModelFactory { initializer { MeViewModel(repo(), gardenApp()) } }
     }
 }

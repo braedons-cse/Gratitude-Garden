@@ -76,6 +76,11 @@ data class Item(
 @Serializable
 private data class InventoryRow(@SerialName("item_id") val itemId: String)
 
+@Serializable
+private data class NotifPromptRow(
+    @SerialName("notif_prompt_seen") val notifPromptSeen: Boolean = false,
+)
+
 /**
  * Thin client over the Supabase backend. Business logic (coins, streaks,
  * provisioning) lives in Postgres RPCs — this just authenticates, calls them,
@@ -207,6 +212,30 @@ class GardenRepository(private val client: SupabaseClient) {
         return client.postgrest.from("profiles").select {
             filter { eq("id", uid) }
         }.decodeList<ProfileRow>().firstOrNull()
+    }
+
+    // ── Notification prompt flag (Supabase-backed, per-user) ─────────
+    // The reminder *preferences* (on/off + time) are stored locally on the
+    // device; only this one-time "have we already asked?" flag lives in
+    // user_settings so the prompt is shown exactly once per account, not per
+    // install. handle_new_user() guarantees the row exists, so a plain UPDATE
+    // is enough (there is no INSERT policy on user_settings).
+
+    /** True once the enable-reminders prompt has been shown (accepted or declined). */
+    suspend fun notifPromptSeen(): Boolean {
+        val uid = currentUid() ?: return true // not signed in → never prompt
+        return client.postgrest.from("user_settings").select {
+            filter { eq("user_id", uid) }
+        }.decodeList<NotifPromptRow>().firstOrNull()?.notifPromptSeen ?: false
+    }
+
+    suspend fun markNotifPromptSeen() {
+        val uid = currentUid() ?: return
+        client.postgrest.from("user_settings").update(
+            buildJsonObject { put("notif_prompt_seen", true) },
+        ) {
+            filter { eq("user_id", uid) }
+        }
     }
 
     // ── Shop / inventory / garden interactions ───────────────────────

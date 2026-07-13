@@ -3,6 +3,7 @@ package com.cse5236.gratitudegarden.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -94,6 +95,7 @@ fun GardenRoute() {
         onSubmit = { text, voice -> vm.submit(text, voice) },
         onWater = vm::water,
         onMessageShown = vm::consumeMessage,
+        onReminderPromptDecided = vm::onReminderPromptDecided,
     )
 }
 
@@ -103,6 +105,7 @@ fun GardenScreen(
     onSubmit: (String, Boolean) -> Unit,
     onWater: (String) -> Unit,
     onMessageShown: () -> Unit,
+    onReminderPromptDecided: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     var showSheet by remember { mutableStateOf(false) }
@@ -232,6 +235,88 @@ fun GardenScreen(
             onWater = { onWater(plant.id); selectedPlant = null },
             onDismiss = { selectedPlant = null },
         )
+    }
+
+    if (ui.showNotifPrompt) {
+        NotifPromptDialog(
+            onEnable = { onReminderPromptDecided(true) },
+            onDecline = { onReminderPromptDecided(false) },
+        )
+    }
+}
+
+// ── One-time "enable daily reminders?" prompt (first gratitude entry) ──────
+@Composable
+private fun NotifPromptDialog(
+    onEnable: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    // On Android 13+ we need the runtime grant before notifications can post. We
+    // enable + schedule regardless of the user's choice here: the worker no-ops
+    // without the grant, and the Me screen surfaces the "notifications off" state.
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ -> onEnable() }
+
+    fun accept() {
+        val needsGrant = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsGrant) permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else onEnable()
+    }
+
+    Dialog(onDismissRequest = onDecline) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(PgBgSage)
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(PgMoss),
+                contentAlignment = Alignment.Center,
+            ) {
+                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 34.dp)
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Keep your streak alive 🌱",
+                fontFamily = Caprasimo,
+                fontSize = 22.sp,
+                color = PgPrimaryDeep,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Want a gentle daily reminder to type or speak a gratitude entry? " +
+                    "We'll nudge you once a day so your streak keeps growing. You can " +
+                    "change the time or turn it off anytime on the Me tab.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.5.sp,
+                color = PgInkSoft,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            PillButton(
+                text = "Enable reminders",
+                onClick = { accept() },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Not now",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = PgInkMuted,
+                modifier = Modifier.clickable(onClick = onDecline).padding(8.dp),
+            )
+        }
     }
 }
 

@@ -1,11 +1,15 @@
 package com.cse5236.gratitudegarden.ui.garden
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cse5236.gratitudegarden.data.GardenPlantRow
 import com.cse5236.gratitudegarden.data.GardenRepository
+import com.cse5236.gratitudegarden.notifications.ReminderPreferences
+import com.cse5236.gratitudegarden.notifications.ReminderScheduler
+import com.cse5236.gratitudegarden.ui.gardenApp
 import com.cse5236.gratitudegarden.ui.repo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,11 +33,15 @@ data class GardenUiState(
     val submitting: Boolean = false,
     val watering: Boolean = false,
     val message: String? = null,
+    val showNotifPrompt: Boolean = false,
 ) {
     val thoughtsLeft: Int get() = (dailyCap - usedToday).coerceAtLeast(0)
 }
 
-class GardenViewModel(private val repo: GardenRepository) : ViewModel() {
+class GardenViewModel(
+    private val repo: GardenRepository,
+    private val appContext: Context,
+) : ViewModel() {
 
     private val _ui = MutableStateFlow(GardenUiState())
     val ui: StateFlow<GardenUiState> = _ui.asStateFlow()
@@ -82,8 +90,38 @@ class GardenViewModel(private val repo: GardenRepository) : ViewModel() {
                 repo.submitEntry(text.trim(), voice)
                 load()
                 _ui.update { it.copy(submitting = false, message = "+5 coins · a kind thought planted 🌱") }
+                maybeOfferReminders()
             } catch (e: Exception) {
                 _ui.update { it.copy(submitting = false, message = e.message ?: "Couldn't save your thought") }
+            }
+        }
+    }
+
+    /**
+     * After a gratitude entry saves, show the one-time "enable daily reminders?"
+     * prompt if this user has never seen it. The seen-flag lives in Supabase
+     * (per-user), so it's shown exactly once per account — not once per install.
+     */
+    private suspend fun maybeOfferReminders() {
+        val alreadyAsked = runCatching { repo.notifPromptSeen() }.getOrDefault(true)
+        if (!alreadyAsked) _ui.update { it.copy(showNotifPrompt = true) }
+    }
+
+    /**
+     * Resolve the one-time prompt. [enable] true means the user opted in — turn
+     * reminders on locally and schedule the daily job (the caller is responsible
+     * for having requested the POST_NOTIFICATIONS grant first on Android 13+).
+     * Either way the prompt is marked seen so it never reappears.
+     */
+    fun onReminderPromptDecided(enable: Boolean) {
+        _ui.update { it.copy(showNotifPrompt = false) }
+        viewModelScope.launch {
+            runCatching { repo.markNotifPromptSeen() }
+            if (enable) {
+                val prefs = ReminderPreferences(appContext)
+                prefs.setEnabled(true)
+                val s = prefs.current()
+                ReminderScheduler.schedule(appContext, s.hour, s.minute)
             }
         }
     }
@@ -107,6 +145,6 @@ class GardenViewModel(private val repo: GardenRepository) : ViewModel() {
     }
 
     companion object {
-        val Factory = viewModelFactory { initializer { GardenViewModel(repo()) } }
+        val Factory = viewModelFactory { initializer { GardenViewModel(repo(), gardenApp()) } }
     }
 }

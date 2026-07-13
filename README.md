@@ -7,7 +7,33 @@ through the official Supabase Kotlin client using the **anon key** only.
 
 ---
 
-## Latest changes — Account deletion
+## Latest changes — Daily streak reminders
+
+The app can now send a **daily reminder notification** to help users keep their
+gratitude streak alive.
+
+- **One-time opt-in prompt:** after a user's **first gratitude entry**, a one-time
+  dialog asks whether they'd like daily reminders. It's shown **exactly once per
+  account** — the seen-flag lives in Supabase (`user_settings.notif_prompt_seen`),
+  so it never re-appears on reinstall or a new device. Accepting requests the
+  Android 13+ `POST_NOTIFICATIONS` permission and schedules the reminder.
+- **Notification settings (top of the Me screen):** an enable/disable **switch** and
+  a **time-of-day picker** for when the daily nudge fires. If notifications are
+  turned off for the app at the OS level, the card explains this and links to system
+  settings.
+- **Scheduling — WorkManager:** a self-chaining daily worker posts the reminder
+  ("keep your streak — type or speak a gratitude entry") and re-arms for the next
+  day. The schedule **survives device reboot automatically** (no BootReceiver
+  needed); this is the main reason WorkManager was chosen over AlarmManager, whose
+  alarms are cleared on reboot.
+- **Persistence split:** reminder **preferences** (on/off + time) are stored
+  **on-device** via DataStore; only the once-per-user **prompt flag** is stored in
+  Supabase. Backend change: migration `add_notif_prompt_seen_to_user_settings` adds
+  `user_settings.notif_prompt_seen boolean not null default false`.
+
+---
+
+## Previous update — Account deletion
 
 Users can now **delete their own account**, and account deletion is now *complete*
 — it removes the login and wipes every associated row.
