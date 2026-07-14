@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cse5236.gratitudegarden.data.GardenPlantRow
 import com.cse5236.gratitudegarden.data.GardenRepository
+import com.cse5236.gratitudegarden.data.Item
 import com.cse5236.gratitudegarden.notifications.ReminderPreferences
 import com.cse5236.gratitudegarden.notifications.ReminderScheduler
 import com.cse5236.gratitudegarden.ui.gardenApp
@@ -28,10 +29,12 @@ data class GardenUiState(
     val gridRows: Int = 6,
     val gridCols: Int = 5,
     val itemSlugs: Map<String, String> = emptyMap(),
+    val ownedSeeds: List<Item> = emptyList(),
     val dailyCap: Int = 10,
     val usedToday: Int = 0,
     val submitting: Boolean = false,
     val watering: Boolean = false,
+    val placing: Boolean = false,
     val message: String? = null,
     val showNotifPrompt: Boolean = false,
 ) {
@@ -46,7 +49,11 @@ class GardenViewModel(
     private val _ui = MutableStateFlow(GardenUiState())
     val ui: StateFlow<GardenUiState> = _ui.asStateFlow()
 
-    init { refresh() }
+    init {
+        refresh()
+        // Reload whenever any screen mutates data (e.g. planting from the Shop).
+        viewModelScope.launch { repo.changes.collect { load() } }
+    }
 
     fun refresh() {
         viewModelScope.launch { load() }
@@ -61,6 +68,7 @@ class GardenViewModel(
             val plants = repo.plants()
             val entries = repo.entries()
             val slugs = repo.itemSlugs()
+            val owned = repo.ownedSeeds()
             val today = LocalDate.now().toString()
             val used = entries.count { it.entryDate == today }
             _ui.update {
@@ -74,6 +82,7 @@ class GardenViewModel(
                     gridRows = garden?.gridRows ?: 6,
                     gridCols = garden?.gridCols ?: 5,
                     itemSlugs = slugs,
+                    ownedSeeds = owned,
                     usedToday = used,
                 )
             }
@@ -137,6 +146,61 @@ class GardenViewModel(
             } catch (e: Exception) {
                 _ui.update { it.copy(watering = false, message = e.message ?: "Couldn't water") }
             }
+        }
+    }
+
+    /** Plant an owned seed into a specific cell (chosen by tapping soil or from the Shop). */
+    fun plantSeedAt(itemId: String, x: Int, y: Int) {
+        if (_ui.value.placing) return
+        _ui.update { it.copy(placing = true) }
+        viewModelScope.launch {
+            try {
+                repo.placePlant(itemId, x, y)
+                load()
+                _ui.update { it.copy(placing = false, message = "Planted 🌿") }
+            } catch (e: Exception) {
+                _ui.update { it.copy(placing = false, message = friendly(e)) }
+            }
+        }
+    }
+
+    /** Move an existing plant to a new cell (drag-and-drop). */
+    fun movePlant(plantId: String, x: Int, y: Int) {
+        if (_ui.value.placing) return
+        _ui.update { it.copy(placing = true) }
+        viewModelScope.launch {
+            try {
+                repo.movePlant(plantId, x, y)
+                load()
+                _ui.update { it.copy(placing = false) }
+            } catch (e: Exception) {
+                _ui.update { it.copy(placing = false, message = friendly(e)) }
+            }
+        }
+    }
+
+    /** Dig up (remove) a plant from the garden. */
+    fun digUp(plantId: String) {
+        if (_ui.value.placing) return
+        _ui.update { it.copy(placing = true) }
+        viewModelScope.launch {
+            try {
+                repo.digUpPlant(plantId)
+                load()
+                _ui.update { it.copy(placing = false, message = "Dug up 🪴") }
+            } catch (e: Exception) {
+                _ui.update { it.copy(placing = false, message = friendly(e)) }
+            }
+        }
+    }
+
+    private fun friendly(e: Exception): String {
+        val m = e.message ?: return "Something went wrong"
+        return when {
+            "occupied" in m -> "That spot's already taken — try another."
+            "out of bounds" in m -> "That's outside the garden."
+            "do not own" in m -> "You don't own that seed yet."
+            else -> m.take(120)
         }
     }
 

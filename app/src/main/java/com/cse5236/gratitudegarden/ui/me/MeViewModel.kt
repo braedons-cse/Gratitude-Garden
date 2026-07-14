@@ -1,6 +1,9 @@
 package com.cse5236.gratitudegarden.ui.me
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -33,6 +36,8 @@ data class MeUiState(
     val reminderMinute: Int = 0,
     // Whether the OS will actually let our notifications through.
     val osNotificationsEnabled: Boolean = true,
+    // Whether the microphone runtime permission is currently granted.
+    val micGranted: Boolean = false,
 )
 
 class MeViewModel(
@@ -46,38 +51,57 @@ class MeViewModel(
     private val reminderPrefs = ReminderPreferences(appContext)
 
     init {
-        viewModelScope.launch {
-            try {
-                val profile = repo.profile()
-                val wallet = repo.wallet()
-                val stats = repo.stats()
-                val reminder = reminderPrefs.current()
-                _ui.update {
-                    it.copy(
-                        loading = false,
-                        name = profile?.displayName ?: "Gardener",
-                        level = profile?.level ?: 1,
-                        coins = wallet?.balance ?: 0,
-                        streak = stats?.currentStreak ?: 0,
-                        totalEntries = stats?.totalEntries ?: 0,
-                        isAdmin = profile?.isAdmin ?: false,
-                        reminderEnabled = reminder.enabled,
-                        reminderHour = reminder.hour,
-                        reminderMinute = reminder.minute,
-                        osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
-                    )
-                }
-            } catch (_: Exception) {
-                _ui.update { it.copy(loading = false) }
+        viewModelScope.launch { load() }
+        // Keep stats/coins fresh when they change on other screens.
+        viewModelScope.launch { repo.changes.collect { load() } }
+    }
+
+    private suspend fun load() {
+        try {
+            val profile = repo.profile()
+            val wallet = repo.wallet()
+            val stats = repo.stats()
+            val reminder = reminderPrefs.current()
+            _ui.update {
+                it.copy(
+                    loading = false,
+                    name = profile?.displayName ?: "Gardener",
+                    level = profile?.level ?: 1,
+                    coins = wallet?.balance ?: 0,
+                    streak = stats?.currentStreak ?: 0,
+                    totalEntries = stats?.totalEntries ?: 0,
+                    isAdmin = profile?.isAdmin ?: false,
+                    reminderEnabled = reminder.enabled,
+                    reminderHour = reminder.hour,
+                    reminderMinute = reminder.minute,
+                    osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
+                    micGranted = micGranted(),
+                )
             }
+            // If notifications were revoked while a reminder was set, turn it off.
+            if (reminder.enabled && !ReminderNotifications.enabledAtOsLevel(appContext)) {
+                setReminderEnabled(false)
+            }
+        } catch (_: Exception) {
+            _ui.update { it.copy(loading = false) }
         }
     }
 
-    /** Re-read the OS notification state — call when returning to the screen. */
-    fun refreshOsNotificationState() {
-        _ui.update {
-            it.copy(osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext))
-        }
+    private fun micGranted(): Boolean =
+        ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Re-read the microphone + notification permission state — call on resume and
+     * after a permission request. If notifications were turned off at the OS level
+     * while the daily reminder was on, the reminder is switched off too so the toggle
+     * reflects reality.
+     */
+    fun refreshPermissions() {
+        val osNotif = ReminderNotifications.enabledAtOsLevel(appContext)
+        val wasReminderOn = _ui.value.reminderEnabled
+        _ui.update { it.copy(osNotificationsEnabled = osNotif, micGranted = micGranted()) }
+        if (wasReminderOn && !osNotif) setReminderEnabled(false)
     }
 
     /** Toggle the daily reminder on/off. Enabling schedules; disabling cancels. */

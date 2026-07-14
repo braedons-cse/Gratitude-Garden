@@ -1,5 +1,12 @@
 package com.cse5236.gratitudegarden.ui.sprites
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,9 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -21,8 +30,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.unit.Dp
@@ -148,14 +159,47 @@ fun Plant(colors: PlantColors, stage: Int, size: Dp) {
     Plant(colors = colors, stage = stage, modifier = Modifier.size(size))
 }
 
+/**
+ * @param idle when true the sprite gently sways/breathes forever (for the living
+ *   garden grid). [phaseMillis] desynchronises neighbours so they don't move in
+ *   lockstep — pass a per-cell offset.
+ */
 @Composable
-fun Plant(colors: PlantColors, stage: Int, modifier: Modifier) {
-    Canvas(modifier = modifier) {
+fun Plant(
+    colors: PlantColors,
+    stage: Int,
+    modifier: Modifier,
+    idle: Boolean = false,
+    phaseMillis: Int = 0,
+) {
+    val swaying = if (idle) modifier.plantSway(phaseMillis) else modifier
+    Canvas(modifier = swaying) {
         when (stage) {
             1 -> drawSprout(colors)
             2 -> drawSapling(colors)
             else -> drawMaturePlant(colors)
         }
+    }
+}
+
+/** Rooted-at-the-base sway + subtle breathing; cheap (transforms a static layer). */
+private fun Modifier.plantSway(phaseMillis: Int): Modifier = composed {
+    val transition = rememberInfiniteTransition(label = "plantSway")
+    val wave by transition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+            initialStartOffset = StartOffset(phaseMillis % 2600),
+        ),
+        label = "plantWave",
+    )
+    graphicsLayer {
+        transformOrigin = TransformOrigin(0.5f, 0.92f)
+        rotationZ = wave * 3.5f
+        val s = 1f + 0.03f * ((wave + 1f) / 2f)
+        scaleX = s; scaleY = s
     }
 }
 

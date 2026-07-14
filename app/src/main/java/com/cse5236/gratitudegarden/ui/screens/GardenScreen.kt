@@ -3,7 +3,9 @@ package com.cse5236.gratitudegarden.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -11,8 +13,22 @@ import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +38,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -33,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,22 +63,32 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Dialog
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cse5236.gratitudegarden.ui.components.PillButton
 import com.cse5236.gratitudegarden.util.LogComposableLifecycle
 import com.cse5236.gratitudegarden.util.LogTags
+import com.cse5236.gratitudegarden.util.findActivity
 import com.cse5236.gratitudegarden.data.GardenPlantRow
+import com.cse5236.gratitudegarden.data.Item
 import com.cse5236.gratitudegarden.ui.garden.GardenUiState
 import com.cse5236.gratitudegarden.ui.garden.GardenViewModel
 import com.cse5236.gratitudegarden.ui.sprites.CoinIcon
@@ -72,6 +100,7 @@ import com.cse5236.gratitudegarden.ui.sprites.growthStageToSprite
 import com.cse5236.gratitudegarden.ui.theme.Caprasimo
 import com.cse5236.gratitudegarden.ui.theme.Nunito
 import com.cse5236.gratitudegarden.ui.theme.PgAccent
+import com.cse5236.gratitudegarden.ui.theme.PgAccentDeep
 import com.cse5236.gratitudegarden.ui.theme.PgBgCream
 import com.cse5236.gratitudegarden.ui.theme.PgBgSage
 import com.cse5236.gratitudegarden.ui.theme.PgInk
@@ -80,13 +109,19 @@ import com.cse5236.gratitudegarden.ui.theme.PgInkSoft
 import com.cse5236.gratitudegarden.ui.theme.PgMoss
 import com.cse5236.gratitudegarden.ui.theme.PgPrimary
 import com.cse5236.gratitudegarden.ui.theme.PgPrimaryDeep
+import com.cse5236.gratitudegarden.ui.theme.pressScale
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private val SoilTop = Color(0xFFA48560)
 private val SoilBottom = Color(0xFF8B6F47)
 
 @Composable
-fun GardenRoute() {
+fun GardenRoute(
+    placingItemId: String? = null,
+    onPlacementDone: () -> Unit = {},
+    onDragActive: (Boolean) -> Unit = {},
+) {
     LogComposableLifecycle(LogTags.GARDEN_SCREEN)
     val vm: GardenViewModel = viewModel(factory = GardenViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -96,6 +131,12 @@ fun GardenRoute() {
         onWater = vm::water,
         onMessageShown = vm::consumeMessage,
         onReminderPromptDecided = vm::onReminderPromptDecided,
+        placingItemId = placingItemId,
+        onPlantSeed = { itemId, x, y -> vm.plantSeedAt(itemId, x, y) },
+        onMovePlant = { plantId, x, y -> vm.movePlant(plantId, x, y) },
+        onDigUp = vm::digUp,
+        onPlacementDone = onPlacementDone,
+        onDragActive = onDragActive,
     )
 }
 
@@ -106,10 +147,18 @@ fun GardenScreen(
     onWater: (String) -> Unit,
     onMessageShown: () -> Unit,
     onReminderPromptDecided: (Boolean) -> Unit = {},
+    placingItemId: String? = null,
+    onPlantSeed: (String, Int, Int) -> Unit = { _, _, _ -> },
+    onMovePlant: (String, Int, Int) -> Unit = { _, _, _ -> },
+    onDigUp: (String) -> Unit = {},
+    onPlacementDone: () -> Unit = {},
+    onDragActive: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     var showSheet by remember { mutableStateOf(false) }
     var selectedPlant by remember { mutableStateOf<GardenPlantRow?>(null) }
+    // A cell the user tapped to plant into (garden-initiated seed picker).
+    var pickerCell by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     LaunchedEffect(ui.message) {
         ui.message?.let {
@@ -124,6 +173,14 @@ fun GardenScreen(
     }
 
     val title = if (ui.displayName.isNotBlank()) "${ui.displayName}'s Garden" else ui.gardenName
+
+    // Roll the counters up to their values instead of snapping.
+    val animatedCoins by animateIntAsState(
+        targetValue = ui.coins, animationSpec = tween(600), label = "coins",
+    )
+    val animatedStreak by animateIntAsState(
+        targetValue = ui.streak, animationSpec = tween(600), label = "streak",
+    )
 
     Column(
         modifier = Modifier.fillMaxSize().background(PgBgSage).padding(horizontal = 18.dp),
@@ -140,7 +197,7 @@ fun GardenScreen(
             Chip {
                 PgIcon(name = PgIconName.Flame, color = PgAccent, size = 16.dp)
                 Spacer(Modifier.size(5.dp))
-                Text("${ui.streak}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                Text("$animatedStreak", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
                 Spacer(Modifier.size(3.dp))
                 Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = PgInkMuted)
             }
@@ -154,7 +211,7 @@ fun GardenScreen(
             Chip {
                 CoinIcon(size = 16.dp)
                 Spacer(Modifier.size(5.dp))
-                Text("${ui.coins}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                Text("$animatedCoins", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
             }
         }
 
@@ -183,8 +240,30 @@ fun GardenScreen(
 
         Spacer(Modifier.height(10.dp))
 
+        // Placement banner — shown when the Shop sent us here to place a seed.
+        if (placingItemId != null) {
+            val name = ui.ownedSeeds.firstOrNull { it.id == placingItemId }?.name ?: "seed"
+            PlacementBanner(seedName = name, onCancel = onPlacementDone)
+            Spacer(Modifier.height(8.dp))
+        }
+
         // Soil grid
-        GardenGrid(ui = ui, onPlantClick = { selectedPlant = it })
+        GardenGrid(
+            ui = ui,
+            placing = placingItemId != null,
+            onPlantClick = { selectedPlant = it },
+            onEmptyClick = { x, y ->
+                val pid = placingItemId
+                if (pid != null) {
+                    onPlantSeed(pid, x, y)
+                    onPlacementDone()
+                } else {
+                    pickerCell = x to y
+                }
+            },
+            onMovePlant = onMovePlant,
+            onDragActive = onDragActive,
+        )
 
         Spacer(Modifier.weight(1f))
 
@@ -233,7 +312,16 @@ fun GardenScreen(
             coins = ui.coins,
             watering = ui.watering,
             onWater = { onWater(plant.id); selectedPlant = null },
+            onDigUp = { onDigUp(plant.id); selectedPlant = null },
             onDismiss = { selectedPlant = null },
+        )
+    }
+
+    pickerCell?.let { (x, y) ->
+        SeedPickerSheet(
+            seeds = ui.ownedSeeds,
+            onPick = { item -> onPlantSeed(item.id, x, y); pickerCell = null },
+            onDismiss = { pickerCell = null },
         )
     }
 
@@ -332,8 +420,21 @@ private fun Chip(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun GardenGrid(ui: GardenUiState, onPlantClick: (GardenPlantRow) -> Unit) {
+private fun GardenGrid(
+    ui: GardenUiState,
+    placing: Boolean,
+    onPlantClick: (GardenPlantRow) -> Unit,
+    onEmptyClick: (Int, Int) -> Unit,
+    onMovePlant: (String, Int, Int) -> Unit,
+    onDragActive: (Boolean) -> Unit,
+) {
     val plantAt = remember(ui.plants) { ui.plants.associateBy { it.gridY to it.gridX } }
+    var cellPx by remember { mutableStateOf(IntSize.Zero) }
+    val gapPx = with(LocalDensity.current) { 4.dp.toPx() }
+    // Row holding the plant being dragged — lifted above the others so the
+    // dragged sprite is never occluded by a neighbouring row.
+    var draggingRow by remember { mutableStateOf<Int?>(null) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -346,26 +447,49 @@ private fun GardenGrid(ui: GardenUiState, onPlantClick: (GardenPlantRow) -> Unit
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             for (r in 0 until ui.gridRows) {
-                Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .zIndex(if (draggingRow == r) 1f else 0f),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     for (c in 0 until ui.gridCols) {
                         val plant = plantAt[r to c]
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxSize()
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Brush.linearGradient(listOf(SoilTop, SoilBottom)))
+                                .onSizeChanged { if (it.width > 0 && it.height > 0) cellPx = it }
+                                .background(
+                                    Brush.linearGradient(listOf(SoilTop, SoilBottom)),
+                                    RoundedCornerShape(6.dp),
+                                )
                                 .then(
-                                    if (plant != null) Modifier.clickable { onPlantClick(plant) }
+                                    if (plant == null && placing)
+                                        Modifier.border(2.dp, PgPrimary.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
                                     else Modifier
+                                )
+                                .then(
+                                    if (plant == null) Modifier.clickable { onEmptyClick(c, r) } else Modifier
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (plant != null) {
-                                Plant(
-                                    colors = PlantPalette.forSlug(ui.itemSlugs[plant.itemId]),
-                                    stage = growthStageToSprite(plant.growthStage),
-                                    modifier = Modifier.fillMaxSize().padding(4.dp),
+                                DraggablePlant(
+                                    plant = plant,
+                                    slug = ui.itemSlugs[plant.itemId],
+                                    phaseMillis = (r * ui.gridCols + c) * 240,
+                                    cellPx = cellPx,
+                                    gapPx = gapPx,
+                                    onTap = { onPlantClick(plant) },
+                                    onDragStart = { draggingRow = r; onDragActive(true) },
+                                    onDragStop = { draggingRow = null; onDragActive(false) },
+                                    onDrop = { tx, ty ->
+                                        val inBounds = tx in 0 until ui.gridCols && ty in 0 until ui.gridRows
+                                        val occupied = plantAt[ty to tx] != null
+                                        if (inBounds && !occupied) onMovePlant(plant.id, tx, ty)
+                                    },
                                 )
                             }
                         }
@@ -376,8 +500,208 @@ private fun GardenGrid(ui: GardenUiState, onPlantClick: (GardenPlantRow) -> Unit
     }
 }
 
+/**
+ * A plant sitting in its soil cell. Tap opens its detail; long-press picks it up
+ * to drag to another cell (moved in whole-cell steps relative to its start cell).
+ * The drag uses a cheap graphicsLayer translation, and the caller disables the
+ * pager while a plant is held (onDragStart/onDragStop) so the swipe doesn't fight
+ * the drag.
+ */
+@Composable
+private fun DraggablePlant(
+    plant: GardenPlantRow,
+    slug: String?,
+    phaseMillis: Int,
+    cellPx: IntSize,
+    gapPx: Float,
+    onTap: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragStop: () -> Unit,
+    onDrop: (Int, Int) -> Unit,
+) {
+    val strideX = cellPx.width + gapPx
+    val strideY = cellPx.height + gapPx
+    var drag by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(if (dragging) 10f else 0f)
+            .graphicsLayer {
+                translationX = drag.x
+                translationY = drag.y
+                if (dragging) {
+                    scaleX = 1.15f; scaleY = 1.15f
+                    shadowElevation = 16f
+                }
+            }
+            .pointerInput(plant.id) {
+                detectTapGestures { onTap() }
+            }
+            .pointerInput(plant.id, strideX, strideY) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { dragging = true; onDragStart() },
+                    onDrag = { change, delta -> drag += delta; change.consume() },
+                    onDragEnd = {
+                        val dx = if (strideX > 0f) (drag.x / strideX).roundToInt() else 0
+                        val dy = if (strideY > 0f) (drag.y / strideY).roundToInt() else 0
+                        dragging = false
+                        drag = Offset.Zero
+                        onDragStop()
+                        if (dx != 0 || dy != 0) onDrop(plant.gridX + dx, plant.gridY + dy)
+                    },
+                    onDragCancel = { dragging = false; drag = Offset.Zero; onDragStop() },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Plant(
+            colors = PlantPalette.forSlug(slug),
+            stage = growthStageToSprite(plant.growthStage),
+            modifier = Modifier.fillMaxSize().padding(4.dp),
+            idle = !dragging,
+            phaseMillis = phaseMillis,
+        )
+    }
+}
+
+/** Banner shown while placing a seed from the Shop — tap a soil cell to plant. */
+@Composable
+private fun PlacementBanner(seedName: String, onCancel: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(PgMoss)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Tap a spot to plant your $seedName",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = PgPrimaryDeep,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "Cancel",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            color = PgInkSoft,
+            modifier = Modifier.clickable(onClick = onCancel).padding(start = 10.dp),
+        )
+    }
+}
+
+/** Sheet of the seeds you own, shown after tapping an empty plot in the garden. */
+@Composable
+private fun SeedPickerSheet(
+    seeds: List<Item>,
+    onPick: (Item) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(PgBgSage)
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Plant a seed", fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Spacer(Modifier.height(4.dp))
+            if (seeds.isEmpty()) {
+                Text(
+                    "You don't own any seeds yet — visit the Shop to get some.",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.5.sp,
+                    color = PgInkSoft,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            } else {
+                Text(
+                    "Choose one of your seeds to plant here.",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
+                    color = PgInkSoft,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    seeds.forEach { seed ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White)
+                                .clickable { onPick(seed) }
+                                .padding(12.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)).background(PgMoss),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Plant(
+                                    colors = PlantPalette.forSlug(seed.slug),
+                                    stage = 3,
+                                    modifier = Modifier.fillMaxSize().padding(10.dp),
+                                )
+                            }
+                            Text(
+                                seed.name,
+                                fontFamily = Nunito,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = PgInk,
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Cancel",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = PgInkMuted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun MicButton(progress: Float, onClick: () -> Unit) {
+    // Sweep the progress ring to its new value instead of snapping.
+    val animProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0f, 1f),
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label = "micProgress",
+    )
+    // Slow breathing pulse to invite a tap.
+    val infinite = rememberInfiniteTransition(label = "micPulse")
+    val pulse by infinite.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "micPulseScale",
+    )
+    val interaction = remember { MutableInteractionSource() }
     Box(modifier = Modifier.size(116.dp), contentAlignment = Alignment.Center) {
         androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
             val stroke = 6.dp.toPx()
@@ -391,7 +715,7 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
             )
             drawArc(
                 color = PgPrimary,
-                startAngle = -90f, sweepAngle = 360f * progress.coerceIn(0f, 1f), useCenter = false,
+                startAngle = -90f, sweepAngle = 360f * animProgress, useCenter = false,
                 topLeft = Offset(pad, pad), size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
@@ -399,9 +723,11 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .size(86.dp)
+                .graphicsLayer { scaleX = pulse; scaleY = pulse }
+                .pressScale(interaction, pressedScale = 0.90f)
                 .clip(CircleShape)
                 .background(Brush.verticalGradient(listOf(PgPrimary, PgPrimaryDeep)))
-                .clickable(onClick = onClick),
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             PgIcon(name = PgIconName.Mic, color = PgBgCream, size = 40.dp)
@@ -421,6 +747,8 @@ private fun NewEntrySheet(
     var isVoice by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
+    var micAsked by remember { mutableStateOf(false) }
+    var showMicBlocked by remember { mutableStateOf(false) }
 
     val recognizer = remember {
         if (SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -479,7 +807,21 @@ private fun NewEntrySheet(
         }
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-        if (granted) startListening() else permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        if (granted) {
+            startListening()
+            return
+        }
+        // Denied: prompt if we still can, otherwise it's blocked ("don't ask
+        // again") so show a popup that offers to re-enable it in Settings.
+        val activity = context.findActivity()
+        val canPrompt = !micAsked ||
+            (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.RECORD_AUDIO))
+        if (canPrompt) {
+            micAsked = true
+            permLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            showMicBlocked = true
+        }
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -566,9 +908,70 @@ private fun NewEntrySheet(
             )
         }
     }
+
+    if (showMicBlocked) {
+        MicBlockedDialog(
+            onOpenSettings = {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null),
+                    )
+                )
+                showMicBlocked = false
+            },
+            onDismiss = { showMicBlocked = false },
+        )
+    }
 }
 
 private fun Modifier.heightInThought(): Modifier = this.height(96.dp)
+
+// Popup shown when the mic is tapped but the permission is blocked — offers a
+// path back to re-enable it (or to just type instead).
+@Composable
+private fun MicBlockedDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(PgBgSage)
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(PgMoss),
+                contentAlignment = Alignment.Center,
+            ) {
+                PgIcon(name = PgIconName.Mic, color = PgInkMuted, size = 34.dp)
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("Microphone is off", fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "To speak your gratitude, turn the microphone back on in Settings — " +
+                    "or just type your thought below.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.5.sp,
+                color = PgInkSoft,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            PillButton(text = "Open Settings", onClick = onOpenSettings, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Type instead",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+                color = PgInkMuted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
+            )
+        }
+    }
+}
 
 // ── Plant detail / watering ──────────────────────────────────────
 @Composable
@@ -578,8 +981,10 @@ private fun PlantDetailDialog(
     coins: Int,
     watering: Boolean,
     onWater: () -> Unit,
+    onDigUp: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    var confirmDig by remember { mutableStateOf(false) }
     val stage = plant.growthStage.lowercase()
     val stageLabel = when (stage) {
         "seedling" -> "Seedling"
@@ -640,7 +1045,20 @@ private fun PlantDetailDialog(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
+            // Dig up (destructive) — two-tap confirm since it's irreversible.
+            Text(
+                text = if (confirmDig) "Tap again to dig up" else "Dig up",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.5.sp,
+                color = PgAccentDeep,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .clickable { if (confirmDig) onDigUp() else confirmDig = true }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            Spacer(Modifier.height(6.dp))
             Text(
                 "Close",
                 fontFamily = Nunito,

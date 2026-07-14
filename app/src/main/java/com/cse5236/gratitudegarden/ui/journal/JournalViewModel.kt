@@ -18,6 +18,7 @@ data class JournalSection(val label: String, val entries: List<GratitudeEntry>)
 
 data class JournalUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val totalEntries: Int = 0,
     val streak: Int = 0,
     val sections: List<JournalSection> = emptyList(),
@@ -30,10 +31,19 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
     private val _ui = MutableStateFlow(JournalUiState())
     val ui: StateFlow<JournalUiState> = _ui.asStateFlow()
 
-    init { refresh() }
-
-    fun refresh() {
+    init {
         viewModelScope.launch { load() }
+        // Reload when entries change (e.g. a new thought planted from the Garden).
+        viewModelScope.launch { repo.changes.collect { load() } }
+    }
+
+    /** User-initiated pull-to-refresh — shows the spinner while reloading. */
+    fun refresh() {
+        viewModelScope.launch {
+            _ui.update { it.copy(refreshing = true) }
+            load()
+            _ui.update { it.copy(refreshing = false) }
+        }
     }
 
     private suspend fun load() {

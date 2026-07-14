@@ -17,7 +17,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,23 +67,29 @@ fun JournalRoute() {
     LogComposableLifecycle(LogTags.JOURNAL_SCREEN)
     val vm: JournalViewModel = viewModel(factory = JournalViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
-    JournalScreen(ui = ui, onEdit = vm::edit, onDelete = vm::delete)
+    JournalScreen(ui = ui, onEdit = vm::edit, onDelete = vm::delete, onRefresh = vm::refresh)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JournalScreen(
     ui: JournalUiState,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    onRefresh: () -> Unit = {},
 ) {
     var actionEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var editEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
 
+    PullToRefreshBox(
+        isRefreshing = ui.refreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize().background(PgBgSage),
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PgBgSage)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp),
     ) {
@@ -139,6 +147,7 @@ fun JournalScreen(
         }
 
         Spacer(Modifier.height(20.dp))
+    }
     }
 
     // Action menu

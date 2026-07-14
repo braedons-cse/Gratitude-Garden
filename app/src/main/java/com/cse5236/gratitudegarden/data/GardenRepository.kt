@@ -5,7 +5,10 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
@@ -90,6 +93,15 @@ class GardenRepository(private val client: SupabaseClient) {
 
     val sessionStatus: StateFlow<SessionStatus> get() = client.auth.sessionStatus
 
+    // ── Cross-screen change signal ───────────────────────────────────
+    // The home pager keeps every tab's ViewModel alive, so a mutation on one
+    // screen would otherwise leave the others showing stale data until the app
+    // is recreated. Each mutation emits here; every ViewModel collects it and
+    // reloads, so plant/buy/water/entry changes appear everywhere immediately.
+    private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val changes: SharedFlow<Unit> = _changes.asSharedFlow()
+    private fun notifyChanged() { _changes.tryEmit(Unit) }
+
     // ── Auth ─────────────────────────────────────────────────────────
     suspend fun signIn(email: String, password: String) {
         client.auth.signInWith(Email) {
@@ -143,6 +155,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_coin_reward", 5)
             },
         )
+        notifyChanged()
     }
 
     suspend fun editEntry(id: String, newText: String) {
@@ -153,6 +166,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_new_text", newText)
             },
         )
+        notifyChanged()
     }
 
     suspend fun deleteEntry(id: String) {
@@ -160,6 +174,7 @@ class GardenRepository(private val client: SupabaseClient) {
             "delete_gratitude_entry",
             buildJsonObject { put("p_entry_id", id) },
         )
+        notifyChanged()
     }
 
     // ── Reads ────────────────────────────────────────────────────────
@@ -259,6 +274,7 @@ class GardenRepository(private val client: SupabaseClient) {
 
     suspend fun purchaseItem(itemId: String) {
         client.postgrest.rpc("purchase_item", buildJsonObject { put("p_item_id", itemId) })
+        notifyChanged()
     }
 
     suspend fun placePlant(itemId: String, gridX: Int, gridY: Int) {
@@ -270,6 +286,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_grid_y", gridY)
             },
         )
+        notifyChanged()
     }
 
     suspend fun waterPlant(plantId: String, cost: Int = 10) {
@@ -280,6 +297,34 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_water_cost", cost)
             },
         )
+        notifyChanged()
+    }
+
+    /** Move an existing plant to a new cell (server rejects occupied/out-of-bounds). */
+    suspend fun movePlant(plantId: String, gridX: Int, gridY: Int) {
+        client.postgrest.rpc(
+            "move_plant",
+            buildJsonObject {
+                put("p_plant_id", plantId)
+                put("p_grid_x", gridX)
+                put("p_grid_y", gridY)
+            },
+        )
+        notifyChanged()
+    }
+
+    /** Dig up (delete) one of the user's own plants. RLS scopes the delete to the owner. */
+    suspend fun digUpPlant(plantId: String) {
+        client.postgrest.from("garden_plants").delete {
+            filter { eq("id", plantId) }
+        }
+        notifyChanged()
+    }
+
+    /** The seeds the user owns, as catalog items — for the "plant a seed here" picker. */
+    suspend fun ownedSeeds(): List<Item> {
+        val owned = inventory()
+        return items("seed").filter { it.id in owned }
     }
 
     /** Plant an owned seed into the first free cell. Returns false if the garden is full. */

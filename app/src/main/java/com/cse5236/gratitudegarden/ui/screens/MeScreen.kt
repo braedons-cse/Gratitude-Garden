@@ -3,12 +3,15 @@ package com.cse5236.gratitudegarden.ui.screens
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -56,6 +61,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cse5236.gratitudegarden.ui.components.PgTextField
 import com.cse5236.gratitudegarden.ui.components.PillButton
 import com.cse5236.gratitudegarden.ui.me.MeViewModel
+import com.cse5236.gratitudegarden.util.findActivity
 import com.cse5236.gratitudegarden.ui.sprites.CoinIcon
 import com.cse5236.gratitudegarden.ui.sprites.MaturePlant
 import com.cse5236.gratitudegarden.ui.sprites.PgIcon
@@ -64,6 +70,7 @@ import com.cse5236.gratitudegarden.ui.sprites.PlantPalette
 import com.cse5236.gratitudegarden.ui.theme.Caprasimo
 import com.cse5236.gratitudegarden.ui.theme.Nunito
 import com.cse5236.gratitudegarden.ui.theme.PgAccent
+import com.cse5236.gratitudegarden.ui.theme.PgBgCream
 import com.cse5236.gratitudegarden.ui.theme.PgBgSage
 import com.cse5236.gratitudegarden.ui.theme.PgInk
 import com.cse5236.gratitudegarden.ui.theme.PgInkMuted
@@ -88,7 +95,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) vm.refreshOsNotificationState()
+            if (event == Lifecycle.Event.ON_RESUME) vm.refreshPermissions()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -101,8 +108,19 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         // Turn on regardless — the worker no-ops without the grant and the card
         // below shows the "notifications are off" hint if it was denied.
         vm.setReminderEnabled(true)
-        vm.refreshOsNotificationState()
+        vm.refreshPermissions()
     }
+
+    // Permissions-menu launchers: just re-read state after a request (they don't
+    // touch the reminder toggle — that's the reminder card's job).
+    val micPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ -> vm.refreshPermissions() }
+    val notifCardPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { _ -> vm.refreshPermissions() }
+    var micAsked by rememberSaveable { mutableStateOf(false) }
+    var notifAsked by rememberSaveable { mutableStateOf(false) }
 
     fun onToggleReminder(enabled: Boolean) {
         if (!enabled) {
@@ -122,6 +140,46 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         context.startActivity(intent)
     }
 
+    // App info → Permissions, where the user can revoke a granted permission (an
+    // app can't revoke its own permissions programmatically).
+    fun openAppDetailsSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null),
+        )
+        context.startActivity(intent)
+    }
+
+    // Turn a permission on: prompt if we still can, otherwise it's blocked
+    // ("don't ask again") so send the user to Settings.
+    fun enableMic() {
+        val activity = context.findActivity()
+        val canPrompt = !micAsked ||
+            (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.RECORD_AUDIO))
+        if (canPrompt) {
+            micAsked = true
+            micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        } else {
+            openAppDetailsSettings()
+        }
+    }
+
+    fun enableNotifications() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val activity = context.findActivity()
+            val canPrompt = !notifAsked ||
+                (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS))
+            if (canPrompt) {
+                notifAsked = true
+                notifCardPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                openOsNotificationSettings()
+            }
+        } else {
+            openOsNotificationSettings()  // no runtime notification permission below API 33
+        }
+    }
+
     fun cancelDelete() {
         deleteStep = 0
         password = ""
@@ -132,6 +190,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         modifier = Modifier
             .fillMaxSize()
             .background(PgBgSage)
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
     ) {
         Text(text = "Me", fontFamily = Caprasimo, fontSize = 28.sp, color = PgPrimaryDeep)
@@ -146,6 +205,17 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             onToggle = { onToggleReminder(it) },
             onPickTime = { showTimePicker = true },
             onOpenOsSettings = { openOsNotificationSettings() },
+        )
+        Spacer(Modifier.height(16.dp))
+
+        // Permission management — enable/disable mic + notifications at any time.
+        PermissionsCard(
+            micGranted = ui.micGranted,
+            notifEnabled = ui.osNotificationsEnabled,
+            onEnableMic = { enableMic() },
+            onManageMic = { openAppDetailsSettings() },
+            onEnableNotifications = { enableNotifications() },
+            onManageNotifications = { openOsNotificationSettings() },
         )
         Spacer(Modifier.height(20.dp))
 
@@ -192,7 +262,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             }
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(28.dp))
 
         // Admin-only entry point. Hidden entirely for normal users.
         if (ui.isAdmin) {
@@ -412,6 +482,105 @@ private fun NotificationSettingsCard(
                     .clip(RoundedCornerShape(10.dp))
                     .clickable(onClick = onOpenOsSettings)
                     .padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
+// ── Permissions card ─────────────────────────────────────────────────────
+@Composable
+private fun PermissionsCard(
+    micGranted: Boolean,
+    notifEnabled: Boolean,
+    onEnableMic: () -> Unit,
+    onManageMic: () -> Unit,
+    onEnableNotifications: () -> Unit,
+    onManageNotifications: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .padding(16.dp),
+    ) {
+        Text("Permissions", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PgInk)
+        Text(
+            "Turn these on or off any time. Turning one off opens system settings.",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            color = PgInkMuted,
+            modifier = Modifier.padding(top = 2.dp, bottom = 12.dp),
+        )
+        PermissionRow(
+            icon = PgIconName.Mic,
+            title = "Microphone",
+            subtitle = "Speak your gratitude entries",
+            granted = micGranted,
+            onEnable = onEnableMic,
+            onManage = onManageMic,
+        )
+        Spacer(Modifier.height(10.dp))
+        PermissionRow(
+            icon = PgIconName.Flame,
+            title = "Notifications",
+            subtitle = "Daily gratitude reminders",
+            granted = notifEnabled,
+            onEnable = onEnableNotifications,
+            onManage = onManageNotifications,
+        )
+    }
+}
+
+@Composable
+private fun PermissionRow(
+    icon: PgIconName,
+    title: String,
+    subtitle: String,
+    granted: Boolean,
+    onEnable: () -> Unit,
+    onManage: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier.size(38.dp).clip(CircleShape).background(PgMoss),
+            contentAlignment = Alignment.Center,
+        ) {
+            PgIcon(name = icon, color = if (granted) PgPrimaryDeep else PgInkMuted, size = 20.dp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = PgInk)
+            Text(subtitle, fontFamily = Nunito, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = PgInkSoft)
+        }
+        Spacer(Modifier.width(8.dp))
+        if (granted) {
+            // Allowed → tap to manage / revoke in system settings.
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(PgMoss)
+                    .clickable(onClick = onManage)
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(PgPrimary))
+                Spacer(Modifier.width(6.dp))
+                Text("Allowed", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = PgPrimaryDeep)
+            }
+        } else {
+            Text(
+                "Turn on",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.5.sp,
+                color = PgBgCream,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(PgPrimary)
+                    .clickable(onClick = onEnable)
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
             )
         }
     }

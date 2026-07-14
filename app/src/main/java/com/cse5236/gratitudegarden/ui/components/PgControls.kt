@@ -3,6 +3,7 @@ package com.cse5236.gratitudegarden.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import com.cse5236.gratitudegarden.ui.theme.PgInkSoft
 import com.cse5236.gratitudegarden.ui.theme.PgMoss
 import com.cse5236.gratitudegarden.ui.theme.PgPrimary
 import com.cse5236.gratitudegarden.ui.theme.PgPrimaryDeep
+import com.cse5236.gratitudegarden.ui.theme.pressScale
 
 /** White, moss-bordered text field with a leading icon and optional label. */
 @Composable
@@ -137,7 +139,8 @@ fun PillButton(
     enabled: Boolean = true,
 ) {
     val shape = RoundedCornerShape(percent = 50)
-    Box(modifier = modifier.height(56.dp)) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(modifier = modifier.height(56.dp).pressScale(interaction, pressedScale = 0.96f)) {
         if (primary) {
             Box(
                 modifier = Modifier
@@ -155,7 +158,12 @@ fun PillButton(
                 .align(Alignment.TopCenter)
                 .clip(shape)
                 .background(if (primary) PgPrimary else Color.White)
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Text(

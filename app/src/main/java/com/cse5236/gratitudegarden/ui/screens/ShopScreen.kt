@@ -17,7 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,18 +57,27 @@ import com.cse5236.gratitudegarden.ui.theme.PgPrimaryDeep
 private enum class Tab(val label: String) { Seeds("Seeds"), Decor("Decor"), Backdrops("Backdrops") }
 
 @Composable
-fun ShopRoute() {
+fun ShopRoute(onRequestPlant: (String) -> Unit = {}) {
     val vm: ShopViewModel = viewModel(factory = ShopViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
-    ShopScreen(ui = ui, onBuy = vm::buy, onPlant = vm::plant, onMessageShown = vm::consumeMessage)
+    ShopScreen(
+        ui = ui,
+        onBuy = vm::buy,
+        // "Plant" now sends you to the Garden to choose the spot.
+        onPlant = { item -> onRequestPlant(item.id) },
+        onMessageShown = vm::consumeMessage,
+        onRefresh = vm::refresh,
+    )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShopScreen(
     ui: ShopUiState,
     onBuy: (Item) -> Unit,
     onPlant: (Item) -> Unit,
     onMessageShown: () -> Unit,
+    onRefresh: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var tab by remember { mutableStateOf(Tab.Seeds) }
@@ -78,10 +89,14 @@ fun ShopScreen(
         }
     }
 
+    PullToRefreshBox(
+        isRefreshing = ui.refreshing,
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize().background(PgBgSage),
+    ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PgBgSage)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp),
     ) {
@@ -119,6 +134,7 @@ fun ShopScreen(
         }
 
         Spacer(Modifier.height(24.dp))
+    }
     }
 }
 

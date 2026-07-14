@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 
 data class ShopUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val coins: Int = 0,
     val level: Int = 1,
     val seeds: List<Item> = emptyList(),
@@ -28,10 +29,19 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
     private val _ui = MutableStateFlow(ShopUiState())
     val ui: StateFlow<ShopUiState> = _ui.asStateFlow()
 
-    init { refresh() }
-
-    fun refresh() {
+    init {
         viewModelScope.launch { load() }
+        // Reload when data changes elsewhere (coins after buying, ownership, etc.).
+        viewModelScope.launch { repo.changes.collect { load() } }
+    }
+
+    /** User-initiated pull-to-refresh — shows the spinner while reloading. */
+    fun refresh() {
+        viewModelScope.launch {
+            _ui.update { it.copy(refreshing = true) }
+            load()
+            _ui.update { it.copy(refreshing = false) }
+        }
     }
 
     private suspend fun load() {
