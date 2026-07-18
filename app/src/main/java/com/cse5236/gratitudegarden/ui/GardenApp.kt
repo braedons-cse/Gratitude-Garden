@@ -56,7 +56,12 @@ fun GratitudeGardenApp() {
 
         Surface(modifier = Modifier.fillMaxSize(), color = PgBgSage) {
             if (status is SessionStatus.Authenticated) {
-                HomeScaffold(onSignOut = authVm::signOut)
+                // Scope the tab/admin ViewModels to this session so they're evicted on
+                // sign-out — otherwise the next user inherits this user's cached state.
+                val userId = (status as SessionStatus.Authenticated).session.user?.id
+                SessionScope(userId) {
+                    HomeScaffold(onSignOut = authVm::signOut)
+                }
             } else {
                 AuthNav(authVm = authVm)
             }
@@ -175,4 +180,9 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
 
     // Hardware back closes the admin overlay before leaving the app.
     BackHandler(enabled = showAdmin) { showAdmin = false }
+    // From a non-Garden tab, back returns to the Garden tab rather than exiting; from the
+    // Garden tab (page 0) neither handler is enabled, so back falls through and exits.
+    BackHandler(enabled = !showAdmin && pagerState.currentPage != 0) {
+        scope.launch { pagerState.animateScrollToPage(0) }
+    }
 }
