@@ -1,43 +1,80 @@
 package com.cse5236.gratitudegarden.notifications
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
+import android.content.Intent
+import android.os.Build
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.util.concurrent.TimeUnit
 
 /**
- * Schedules the daily reminder as a self-chaining [OneTimeWorkRequest]. Each run
- * fires at the chosen local time, then enqueues the next day's run (see
- * [ReminderWorker]). A one-time chain (rather than a PeriodicWorkRequest) lets us
- * target an exact time-of-day and re-target instantly when the user changes it.
+ * Schedules the daily reminder with [AlarmManager]. Each alarm fires at the chosen
+ * local time and [ReminderReceiver] re-arms the next day's alarm when it runs.
  *
- * Reboot behaviour: WorkManager persists its queue and reschedules enqueued work
- * after a device restart on its own, so the reminder keeps firing across reboots
- * without any BootReceiver. (What would NOT survive a reboot is an AlarmManager
- * alarm — that's the tradeoff we avoided by choosing WorkManager.)
+ * Why AlarmManager (not WorkManager): WorkManager is designed for *deferrable*
+ * background work and is throttled by Doze/app-standby, so a daily reminder could
+ * arrive late — or not until the phone was next used. AlarmManager's
+ * `...AndAllowWhileIdle` variants are the supported way to wake the device for a
+ * user-facing, time-of-day notification even while idle.
+ *
+ * Exact vs. inexact: we use [AlarmManager.setExactAndAllowWhileIdle] when the OS
+ * grants exact-alarm access (`canScheduleExactAlarms()`), otherwise we fall back to
+ * the inexact [AlarmManager.setAndAllowWhileIdle] (still Doze-proof, just fires
+ * within a maintenance window rather than to the minute). This keeps us clear of the
+ * Play-restricted `USE_EXACT_ALARM` permission and never crashes when exact access
+ * is denied.
+ *
+ * Reboot: AlarmManager alarms do NOT survive a restart, so [BootReceiver] re-arms
+ * them on BOOT_COMPLETED. Callers also re-arm on app launch (see MeViewModel).
  */
 object ReminderScheduler {
-    const val WORK_NAME = "daily_gratitude_reminder"
+    // Stable request code so re-scheduling replaces the existing alarm/PendingIntent.
+    private const val REQUEST_CODE = 4201
+    const val ACTION_FIRE = "com.cse5236.gratitudegarden.ACTION_REMINDER_FIRE"
 
     fun schedule(context: Context, hour: Int, minute: Int) {
-        val request = OneTimeWorkRequestBuilder<ReminderWorker>()
-            .setInitialDelay(initialDelayMillis(hour, minute), TimeUnit.MILLISECONDS)
-            .addTag(WORK_NAME)
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            WORK_NAME,
-            // REPLACE so changing the time cancels the old pending run and re-arms.
-            ExistingWorkPolicy.REPLACE,
-            request,
-        )
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        val triggerAtMillis = System.currentTimeMillis() + initialDelayMillis(hour, minute)
+        val pending = firePendingIntent(context)
+
+        if (canScheduleExact(context)) {
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, triggerAtMillis, pending,
+            )
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP, triggerAtMillis, pending,
+            )
+        }
     }
 
     fun cancel(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        alarmManager.cancel(firePendingIntent(context))
+    }
+
+    /**
+     * Whether the OS will let us set to-the-minute exact alarms. Always true below
+     * API 31 (no permission existed); on API 31+ it reflects the user's
+     * "Alarms & reminders" special-access grant. When false we still schedule — just
+     * inexactly — so reminders never silently stop.
+     */
+    fun canScheduleExact(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return false
+        return alarmManager.canScheduleExactAlarms()
+    }
+
+    private fun firePendingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, ReminderReceiver::class.java).setAction(ACTION_FIRE)
+        return PendingIntent.getBroadcast(
+            context,
+            REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
     }
 
     /** Millis from [now] until the next occurrence of [hour]:[minute] in local time. */

@@ -38,6 +38,9 @@ data class MeUiState(
     val osNotificationsEnabled: Boolean = true,
     // Whether the microphone runtime permission is currently granted.
     val micGranted: Boolean = false,
+    // Whether the OS grants exact-alarm access. When false, reminders still fire
+    // (inexactly), but we surface a hint offering to enable precise timing.
+    val exactAlarmPermitted: Boolean = true,
 )
 
 class MeViewModel(
@@ -52,6 +55,8 @@ class MeViewModel(
 
     init {
         viewModelScope.launch { load() }
+        // Reconcile the alarm on launch (NOT on every data change — see below).
+        reconcileReminder()
         // Keep stats/coins fresh when they change on other screens.
         viewModelScope.launch { repo.changes.collect { load() } }
     }
@@ -76,14 +81,34 @@ class MeViewModel(
                     reminderMinute = reminder.minute,
                     osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
                     micGranted = micGranted(),
+                    exactAlarmPermitted = ReminderScheduler.canScheduleExact(appContext),
                 )
-            }
-            // If notifications were revoked while a reminder was set, turn it off.
-            if (reminder.enabled && !ReminderNotifications.enabledAtOsLevel(appContext)) {
-                setReminderEnabled(false)
             }
         } catch (_: Exception) {
             _ui.update { it.copy(loading = false) }
+        }
+    }
+
+    /**
+     * Reconcile the daily-reminder alarm with current OS state. Called on launch and
+     * on resume — deliberately NOT from [load], which also runs on every cross-screen
+     * data change and would needlessly churn the alarm.
+     *
+     * - Notifications revoked → turn the reminder off (reflects reality).
+     * - Otherwise (re)arm the alarm. This is idempotent and also handles the two ways
+     *   the OS drops our alarm out from under us: exact-alarm access being granted
+     *   (upgrade inexact→exact) or revoked (Android cancels the exact alarm, so we
+     *   must re-arm — inexactly).
+     */
+    private fun reconcileReminder() {
+        viewModelScope.launch {
+            val reminder = reminderPrefs.current()
+            if (!reminder.enabled) return@launch
+            if (!ReminderNotifications.enabledAtOsLevel(appContext)) {
+                setReminderEnabled(false)
+            } else {
+                ReminderScheduler.schedule(appContext, reminder.hour, reminder.minute)
+            }
         }
     }
 
@@ -92,16 +117,20 @@ class MeViewModel(
             PackageManager.PERMISSION_GRANTED
 
     /**
-     * Re-read the microphone + notification permission state — call on resume and
-     * after a permission request. If notifications were turned off at the OS level
-     * while the daily reminder was on, the reminder is switched off too so the toggle
-     * reflects reality.
+     * Re-read the microphone + notification + exact-alarm permission state — call on
+     * resume and after a permission request. [reconcileReminder] then turns the
+     * reminder off if notifications were revoked, or re-arms the alarm (picking up a
+     * newly granted/revoked exact-alarm access) so the reminder keeps firing.
      */
     fun refreshPermissions() {
-        val osNotif = ReminderNotifications.enabledAtOsLevel(appContext)
-        val wasReminderOn = _ui.value.reminderEnabled
-        _ui.update { it.copy(osNotificationsEnabled = osNotif, micGranted = micGranted()) }
-        if (wasReminderOn && !osNotif) setReminderEnabled(false)
+        _ui.update {
+            it.copy(
+                osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
+                micGranted = micGranted(),
+                exactAlarmPermitted = ReminderScheduler.canScheduleExact(appContext),
+            )
+        }
+        reconcileReminder()
     }
 
     /** Toggle the daily reminder on/off. Enabling schedules; disabling cancels. */

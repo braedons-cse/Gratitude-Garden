@@ -37,6 +37,7 @@ class ReminderPreferences(private val context: Context) {
     private val keyEnabled = booleanPreferencesKey("reminder_enabled")
     private val keyHour = intPreferencesKey("reminder_hour")
     private val keyMinute = intPreferencesKey("reminder_minute")
+    private val keyLastMsg = intPreferencesKey("reminder_last_msg")
 
     val settings: Flow<ReminderSettings> = context.reminderDataStore.data.map { p ->
         ReminderSettings(
@@ -58,5 +59,17 @@ class ReminderPreferences(private val context: Context) {
             it[keyHour] = hour
             it[keyMinute] = minute
         }
+    }
+
+    /**
+     * Index of the last reminder variant shown (-1 if none yet). Used to avoid
+     * repeating the same message on consecutive days. Kept out of [settings] since
+     * it's not UI state — only the worker/receiver touches it.
+     */
+    suspend fun lastMessageIndex(): Int =
+        context.reminderDataStore.data.map { it[keyLastMsg] ?: -1 }.first()
+
+    suspend fun setLastMessageIndex(index: Int) {
+        context.reminderDataStore.edit { it[keyLastMsg] = index }
     }
 }

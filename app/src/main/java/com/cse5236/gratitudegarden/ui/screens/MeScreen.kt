@@ -10,11 +10,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,18 +25,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,8 +52,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -111,16 +116,12 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         vm.refreshPermissions()
     }
 
-    // Permissions-menu launchers: just re-read state after a request (they don't
+    // Microphone-card launcher: just re-read state after a request (it doesn't
     // touch the reminder toggle — that's the reminder card's job).
     val micPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { _ -> vm.refreshPermissions() }
-    val notifCardPermLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { _ -> vm.refreshPermissions() }
     var micAsked by rememberSaveable { mutableStateOf(false) }
-    var notifAsked by rememberSaveable { mutableStateOf(false) }
 
     fun onToggleReminder(enabled: Boolean) {
         if (!enabled) {
@@ -138,6 +139,19 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         context.startActivity(intent)
+    }
+
+    // API 31+: send the user to the system "Alarms & reminders" special-access
+    // screen so they can grant exact-alarm timing. Reminders work without it (just
+    // less precise), so this is offered, not required.
+    fun openExactAlarmSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(
+                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                Uri.fromParts("package", context.packageName, null),
+            )
+            context.startActivity(intent)
+        }
     }
 
     // App info → Permissions, where the user can revoke a granted permission (an
@@ -164,22 +178,6 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         }
     }
 
-    fun enableNotifications() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val activity = context.findActivity()
-            val canPrompt = !notifAsked ||
-                (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS))
-            if (canPrompt) {
-                notifAsked = true
-                notifCardPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                openOsNotificationSettings()
-            }
-        } else {
-            openOsNotificationSettings()  // no runtime notification permission below API 33
-        }
-    }
-
     fun cancelDelete() {
         deleteStep = 0
         password = ""
@@ -196,30 +194,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         Text(text = "Me", fontFamily = Caprasimo, fontSize = 28.sp, color = PgPrimaryDeep)
         Spacer(Modifier.height(16.dp))
 
-        // Notification settings — kept at the very top of the page.
-        NotificationSettingsCard(
-            enabled = ui.reminderEnabled,
-            hour = ui.reminderHour,
-            minute = ui.reminderMinute,
-            osEnabled = ui.osNotificationsEnabled,
-            onToggle = { onToggleReminder(it) },
-            onPickTime = { showTimePicker = true },
-            onOpenOsSettings = { openOsNotificationSettings() },
-        )
-        Spacer(Modifier.height(16.dp))
-
-        // Permission management — enable/disable mic + notifications at any time.
-        PermissionsCard(
-            micGranted = ui.micGranted,
-            notifEnabled = ui.osNotificationsEnabled,
-            onEnableMic = { enableMic() },
-            onManageMic = { openAppDetailsSettings() },
-            onEnableNotifications = { enableNotifications() },
-            onManageNotifications = { openOsNotificationSettings() },
-        )
-        Spacer(Modifier.height(20.dp))
-
-        // Profile row
+        // Profile row — name/garden info sits at the very top of the page.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
                 modifier = Modifier.size(64.dp).clip(CircleShape).background(PgMoss),
@@ -262,6 +237,28 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             }
         }
 
+        Spacer(Modifier.height(28.dp))
+
+        // Notification settings — reminder toggle + time, below the profile.
+        NotificationSettingsCard(
+            enabled = ui.reminderEnabled,
+            hour = ui.reminderHour,
+            minute = ui.reminderMinute,
+            osEnabled = ui.osNotificationsEnabled,
+            exactPermitted = ui.exactAlarmPermitted,
+            onToggle = { onToggleReminder(it) },
+            onPickTime = { showTimePicker = true },
+            onOpenOsSettings = { openOsNotificationSettings() },
+            onOpenExactAlarmSettings = { openExactAlarmSettings() },
+        )
+        Spacer(Modifier.height(16.dp))
+
+        // Microphone gets its own card, mirroring the reminder card's look.
+        MicrophoneCard(
+            micGranted = ui.micGranted,
+            onEnableMic = { enableMic() },
+            onManageMic = { openAppDetailsSettings() },
+        )
         Spacer(Modifier.height(28.dp))
 
         // Admin-only entry point. Hidden entirely for normal users.
@@ -394,9 +391,11 @@ private fun NotificationSettingsCard(
     hour: Int,
     minute: Int,
     osEnabled: Boolean,
+    exactPermitted: Boolean,
     onToggle: (Boolean) -> Unit,
     onPickTime: () -> Unit,
     onOpenOsSettings: () -> Unit,
+    onOpenExactAlarmSettings: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -484,18 +483,33 @@ private fun NotificationSettingsCard(
                     .padding(vertical = 4.dp),
             )
         }
+
+        // Reminders still fire without exact-alarm access, just not to the minute.
+        // Offer the precise-timing opt-in when the OS has it switched off.
+        if (enabled && osEnabled && !exactPermitted) {
+            Text(
+                "Reminders may arrive a few minutes late. Tap to allow exact timing " +
+                    "in “Alarms & reminders”.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.5.sp,
+                color = PgPrimaryDeep,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onOpenExactAlarmSettings)
+                    .padding(vertical = 4.dp),
+            )
+        }
     }
 }
 
-// ── Permissions card ─────────────────────────────────────────────────────
+// ── Microphone card (mirrors the reminder card) ──────────────────────────
 @Composable
-private fun PermissionsCard(
+private fun MicrophoneCard(
     micGranted: Boolean,
-    notifEnabled: Boolean,
     onEnableMic: () -> Unit,
     onManageMic: () -> Unit,
-    onEnableNotifications: () -> Unit,
-    onManageNotifications: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -504,15 +518,6 @@ private fun PermissionsCard(
             .background(Color.White)
             .padding(16.dp),
     ) {
-        Text("Permissions", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = PgInk)
-        Text(
-            "Turn these on or off any time. Turning one off opens system settings.",
-            fontFamily = Nunito,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
-            color = PgInkMuted,
-            modifier = Modifier.padding(top = 2.dp, bottom = 12.dp),
-        )
         PermissionRow(
             icon = PgIconName.Mic,
             title = "Microphone",
@@ -520,15 +525,6 @@ private fun PermissionsCard(
             granted = micGranted,
             onEnable = onEnableMic,
             onManage = onManageMic,
-        )
-        Spacer(Modifier.height(10.dp))
-        PermissionRow(
-            icon = PgIconName.Flame,
-            title = "Notifications",
-            subtitle = "Daily gratitude reminders",
-            granted = notifEnabled,
-            onEnable = onEnableNotifications,
-            onManage = onManageNotifications,
         )
     }
 }
@@ -586,7 +582,6 @@ private fun PermissionRow(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderTimePickerDialog(
     initialHour: Int,
@@ -594,21 +589,62 @@ private fun ReminderTimePickerDialog(
     onConfirm: (Int, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val state = rememberTimePickerState(
-        initialHour = initialHour,
-        initialMinute = initialMinute,
-        is24Hour = false,
-    )
+    // 24h clock → wheel indices: 12-hour display + AM/PM period.
+    val initialH12 = if (initialHour % 12 == 0) 12 else initialHour % 12
+    var hourIndex by remember { mutableStateOf(initialH12 - 1) }        // 0..11 → 1..12
+    var minuteIndex by remember { mutableStateOf(initialMinute) }       // 0..59
+    var periodIndex by remember { mutableStateOf(if (initialHour >= 12) 1 else 0) }
+
+    val hours = remember { (1..12).map { it.toString() } }
+    val minutes = remember { (0..59).map { "%02d".format(it) } }
+    val periods = remember { listOf("AM", "PM") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Reminder time", fontFamily = Caprasimo, color = PgInk) },
+        title = { Text("Set reminder time", fontFamily = Caprasimo, color = PgInk) },
         text = {
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TimePicker(state = state)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WheelColumn(
+                    items = hours,
+                    selectedIndex = hourIndex,
+                    onSelected = { hourIndex = it },
+                    width = 56.dp,
+                )
+                Text(
+                    ":",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 24.sp,
+                    color = PgInkMuted,
+                )
+                WheelColumn(
+                    items = minutes,
+                    selectedIndex = minuteIndex,
+                    onSelected = { minuteIndex = it },
+                    width = 56.dp,
+                )
+                Spacer(Modifier.width(8.dp))
+                WheelColumn(
+                    items = periods,
+                    selectedIndex = periodIndex,
+                    onSelected = { periodIndex = it },
+                    width = 60.dp,
+                )
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(state.hour, state.minute) }) {
+            TextButton(onClick = {
+                val h12 = hourIndex + 1
+                val hour24 = when {
+                    periodIndex == 0 -> if (h12 == 12) 0 else h12          // AM
+                    else -> if (h12 == 12) 12 else h12 + 12                // PM
+                }
+                onConfirm(hour24, minuteIndex)
+            }) {
                 Text("Set", color = PgPrimaryDeep, fontFamily = Nunito, fontWeight = FontWeight.Bold)
             }
         },
@@ -618,6 +654,86 @@ private fun ReminderTimePickerDialog(
             }
         },
     )
+}
+
+private val WheelItemHeight = 44.dp
+private const val WheelVisibleCount = 5
+
+/**
+ * A single snapping scroll wheel (iOS-style). The center row is highlighted; the
+ * item nearest the viewport center is the selection, reported when scrolling settles.
+ */
+@Composable
+private fun WheelColumn(
+    items: List<String>,
+    selectedIndex: Int,
+    onSelected: (Int) -> Unit,
+    width: Dp,
+) {
+    val state = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+    val fling = rememberSnapFlingBehavior(lazyListState = state)
+
+    // Index of the item currently closest to the vertical center of the viewport.
+    val centerIndex by remember {
+        derivedStateOf {
+            val layout = state.layoutInfo
+            if (layout.visibleItemsInfo.isEmpty()) {
+                selectedIndex
+            } else {
+                val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                layout.visibleItemsInfo.minByOrNull {
+                    abs((it.offset + it.size / 2f) - viewportCenter)
+                }?.index ?: selectedIndex
+            }
+        }
+    }
+
+    // Commit the selection once the wheel comes to rest on a new value.
+    LaunchedEffect(centerIndex, state.isScrollInProgress) {
+        if (!state.isScrollInProgress && centerIndex != selectedIndex) onSelected(centerIndex)
+    }
+
+    Box(
+        modifier = Modifier
+            .width(width)
+            .height(WheelItemHeight * WheelVisibleCount),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Selection band behind the center row.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(WheelItemHeight)
+                .clip(RoundedCornerShape(12.dp))
+                .background(PgMoss),
+        )
+        LazyColumn(
+            state = state,
+            flingBehavior = fling,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            contentPadding = PaddingValues(vertical = WheelItemHeight * (WheelVisibleCount / 2)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(items.size) { i ->
+                val isSelected = i == centerIndex
+                Box(
+                    modifier = Modifier
+                        .height(WheelItemHeight)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = items[i],
+                        fontFamily = Nunito,
+                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                        fontSize = if (isSelected) 22.sp else 18.sp,
+                        color = if (isSelected) PgPrimaryDeep else PgInkMuted,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** 24h hour/minute → "8:00 PM" (locale-independent). */

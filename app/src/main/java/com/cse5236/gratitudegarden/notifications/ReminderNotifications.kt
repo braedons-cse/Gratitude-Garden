@@ -1,20 +1,75 @@
 package com.cse5236.gratitudegarden.notifications
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.cse5236.gratitudegarden.MainActivity
+import kotlin.random.Random
+
+/** One reminder variant (notification title + body). */
+data class ReminderMessage(val title: String, val body: String)
 
 /**
  * Notification channel + OS-state helpers for the daily gratitude reminder.
  *
  * minSdk is 28, so notification channels (API 26+) always exist — no version
  * guards needed. The channel is (re)created idempotently from
- * [GratitudeGardenApplication] on every launch and, defensively, from the worker.
+ * [GratitudeGardenApplication] on every launch and, defensively, before each post.
  */
 object ReminderNotifications {
     const val CHANNEL_ID = "daily_reminder"
     const val NOTIFICATION_ID = 1001
+
+    /**
+     * Pool of reminder variants. One is picked each time the alarm fires (see
+     * [pickMessageIndex]) so the daily nudge doesn't read identically every day.
+     */
+    val MESSAGES: List<ReminderMessage> = listOf(
+        ReminderMessage(
+            "Keep your streak going 🌱",
+            "Take a moment to type or speak one thing you're grateful for today.",
+        ),
+        ReminderMessage(
+            "Your garden misses you 🌼",
+            "Plant one grateful thought and watch it grow.",
+        ),
+        ReminderMessage(
+            "A moment for gratitude",
+            "Pause and name one thing you're thankful for right now.",
+        ),
+        ReminderMessage(
+            "One kind word a day 💛",
+            "What's one good thing from today? Add it to your garden.",
+        ),
+        ReminderMessage(
+            "Time to grow 🌿",
+            "A single grateful thought keeps your garden blooming.",
+        ),
+        ReminderMessage(
+            "Don't let your streak wilt 🍂",
+            "Log one thing you're grateful for before the day ends.",
+        ),
+    )
+
+    /**
+     * Pick the next message index at random, never repeating [lastIndex] (so the
+     * reminder never shows the same text two days running). Pure/testable; pass a
+     * seeded [random] in tests. Returns 0 when there's only one message, and treats
+     * a [lastIndex] of -1 (nothing shown yet) as "anything goes".
+     */
+    fun pickMessageIndex(lastIndex: Int, random: Random = Random.Default): Int {
+        if (MESSAGES.size <= 1) return 0
+        val choices = MESSAGES.indices.filter { it != lastIndex }
+        return choices[random.nextInt(choices.size)]
+    }
 
     /** Idempotent — safe to call repeatedly. */
     fun ensureChannel(context: Context) {
@@ -27,6 +82,46 @@ object ReminderNotifications {
         }
         context.getSystemService(NotificationManager::class.java)
             ?.createNotificationChannel(channel)
+    }
+
+    /**
+     * Build and post the daily reminder notification using [MESSAGES]`[index]`.
+     * Tapping it opens the app. Called from [ReminderReceiver] when the alarm fires.
+     * Safe to call from a cold-started process — the channel is (re)created first.
+     */
+    fun postReminder(context: Context, index: Int) {
+        ensureChannel(context)
+
+        // API 33+: silently skip if the runtime grant is missing or was revoked.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val openApp = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            0,
+            openApp,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val message = MESSAGES[index.coerceIn(MESSAGES.indices)]
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(message.title)
+            .setContentText(message.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message.body))
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
     }
 
     /**

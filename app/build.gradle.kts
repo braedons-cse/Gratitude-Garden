@@ -75,9 +75,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
-    // Daily reminder: WorkManager schedules the notification; DataStore stores
-    // the on-device reminder preferences (enabled + time-of-day).
-    implementation(libs.androidx.work.runtime.ktx)
+    // Daily reminder: AlarmManager schedules the notification (see ReminderScheduler);
+    // DataStore stores the on-device reminder preferences (enabled + time-of-day).
     implementation(libs.androidx.datastore.preferences)
 
     // Supabase (auth + postgrest) over Ktor, using kotlinx-serialization
