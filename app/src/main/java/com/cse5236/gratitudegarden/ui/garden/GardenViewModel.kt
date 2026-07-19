@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cse5236.gratitudegarden.data.GardenPlantRow
 import com.cse5236.gratitudegarden.data.GardenRepository
 import com.cse5236.gratitudegarden.data.Item
+import com.cse5236.gratitudegarden.data.effectiveStreak
 import com.cse5236.gratitudegarden.notifications.ReminderPreferences
 import com.cse5236.gratitudegarden.notifications.ReminderScheduler
 import com.cse5236.gratitudegarden.ui.gardenApp
@@ -77,7 +78,7 @@ class GardenViewModel(
                     displayName = profile?.displayName ?: "",
                     gardenName = garden?.name ?: "My Garden",
                     coins = wallet?.balance ?: 0,
-                    streak = stats?.currentStreak ?: 0,
+                    streak = stats?.effectiveStreak ?: 0,
                     plants = plants,
                     gridRows = garden?.gridRows ?: 6,
                     gridCols = garden?.gridCols ?: 5,

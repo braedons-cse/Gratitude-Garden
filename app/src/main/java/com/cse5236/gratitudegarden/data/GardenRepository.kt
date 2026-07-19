@@ -13,6 +13,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 // ── Row DTOs (partial — only the columns the UI needs) ───────────────
 @Serializable
@@ -51,6 +53,28 @@ data class UserStatsRow(
     @SerialName("longest_streak") val longestStreak: Int = 0,
     @SerialName("last_entry_date") val lastEntryDate: String? = null,
 )
+
+/**
+ * The streak to actually show the user right now.
+ *
+ * The stored [currentStreak] is only rewritten when an entry is submitted, so
+ * between submits it goes stale: a run that ended days ago keeps reporting its
+ * old value until the next entry resets it. A run is only still alive while the
+ * last entry was today or yesterday (logging today after logging yesterday
+ * continues it) — once a full calendar day is missed the run is broken and the
+ * effective streak is 0, even though the stored column hasn't been rewritten yet.
+ *
+ * Dates are compared in UTC to match how `entry_date` / `last_entry_date` are
+ * recorded server-side (`now() at time zone 'UTC'`).
+ */
+val UserStatsRow.effectiveStreak: Int
+    get() {
+        val last = lastEntryDate
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: return 0
+        val today = LocalDate.now(ZoneOffset.UTC)
+        return if (last == today || last == today.minusDays(1)) currentStreak else 0
+    }
 
 @Serializable
 data class WalletRow(val balance: Int = 0)

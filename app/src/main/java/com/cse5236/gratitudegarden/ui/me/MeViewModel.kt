@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cse5236.gratitudegarden.data.GardenRepository
+import com.cse5236.gratitudegarden.data.effectiveStreak
 import com.cse5236.gratitudegarden.notifications.ReminderNotifications
 import com.cse5236.gratitudegarden.notifications.ReminderPreferences
 import com.cse5236.gratitudegarden.notifications.ReminderScheduler
@@ -73,7 +74,7 @@ class MeViewModel(
                     name = profile?.displayName ?: "Gardener",
                     level = profile?.level ?: 1,
                     coins = wallet?.balance ?: 0,
-                    streak = stats?.currentStreak ?: 0,
+                    streak = stats?.effectiveStreak ?: 0,
                     totalEntries = stats?.totalEntries ?: 0,
                     isAdmin = profile?.isAdmin ?: false,
                     reminderEnabled = reminder.enabled,

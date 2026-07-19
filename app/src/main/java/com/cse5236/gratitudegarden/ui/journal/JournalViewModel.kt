@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cse5236.gratitudegarden.data.GratitudeEntry
 import com.cse5236.gratitudegarden.data.GardenRepository
+import com.cse5236.gratitudegarden.data.effectiveStreak
 import com.cse5236.gratitudegarden.ui.repo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,7 +60,7 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
                 it.copy(
                     loading = false,
                     totalEntries = stats?.totalEntries ?: entries.size,
-                    streak = stats?.currentStreak ?: 0,
+                    streak = stats?.effectiveStreak ?: 0,
                     sections = sections,
                     entryDates = grouped.keys.toSet(),
                     error = null,
