@@ -70,6 +70,9 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -471,7 +474,13 @@ private fun GardenGrid(
                                     else Modifier
                                 )
                                 .then(
-                                    if (plant == null) Modifier.clickable { onEmptyClick(c, r) } else Modifier
+                                    if (plant == null)
+                                        Modifier
+                                            .semantics {
+                                                contentDescription = "Empty plot, row ${r + 1}, column ${c + 1}"
+                                            }
+                                            .clickable(onClickLabel = "Plant here") { onEmptyClick(c, r) }
+                                    else Modifier
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -524,9 +533,18 @@ private fun DraggablePlant(
     var drag by remember { mutableStateOf(Offset.Zero) }
     var dragging by remember { mutableStateOf(false) }
 
+    val plantName = (slug ?: "plant").replace('_', ' ').replace('-', ' ')
+        .replaceFirstChar { it.uppercase() }
+    val plantStage = plant.growthStage.replace('_', ' ')
+    // The tap is a pointerInput gesture (invisible to TalkBack), so expose an
+    // explicit semantics label + click action here.
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .semantics {
+                contentDescription = "$plantName, $plantStage"
+                onClick(label = "Open plant details") { onTap(); true }
+            }
             .zIndex(if (dragging) 10f else 0f)
             .graphicsLayer {
                 translationX = drag.x
@@ -727,10 +745,20 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
                 .pressScale(interaction, pressedScale = 0.90f)
                 .clip(CircleShape)
                 .background(Brush.verticalGradient(listOf(PgPrimary, PgPrimaryDeep)))
-                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    onClickLabel = "Record a gratitude note",
+                    onClick = onClick,
+                ),
             contentAlignment = Alignment.Center,
         ) {
-            PgIcon(name = PgIconName.Mic, color = PgBgCream, size = 40.dp)
+            PgIcon(
+                name = PgIconName.Mic,
+                color = PgBgCream,
+                size = 40.dp,
+                contentDescription = "Record a gratitude note",
+            )
         }
     }
 }
@@ -845,10 +873,17 @@ private fun NewEntrySheet(
                         if (listening) Brush.verticalGradient(listOf(PgAccent, Color(0xFFD88040)))
                         else Brush.verticalGradient(listOf(PgPrimary, PgPrimaryDeep))
                     )
-                    .clickable { onMicTap() },
+                    .clickable(
+                        onClickLabel = if (listening) "Stop recording" else "Start recording",
+                    ) { onMicTap() },
                 contentAlignment = Alignment.Center,
             ) {
-                PgIcon(name = PgIconName.Mic, color = PgBgCream, size = 34.dp)
+                PgIcon(
+                    name = PgIconName.Mic,
+                    color = PgBgCream,
+                    size = 34.dp,
+                    contentDescription = if (listening) "Stop recording" else "Start recording",
+                )
             }
             Spacer(Modifier.height(10.dp))
             Text(

@@ -121,8 +121,17 @@ fun PgTextField(
             }
             if (isPassword) {
                 Spacer(Modifier.width(8.dp))
-                Box(modifier = Modifier.clickable { visible = !visible }) {
-                    PgIcon(name = PgIconName.Eye, color = PgInkMuted, size = 18.dp)
+                Box(
+                    modifier = Modifier.clickable(
+                        onClickLabel = if (visible) "Hide password" else "Show password",
+                    ) { visible = !visible },
+                ) {
+                    PgIcon(
+                        name = PgIconName.Eye,
+                        color = PgInkMuted,
+                        size = 18.dp,
+                        contentDescription = if (visible) "Hide password" else "Show password",
+                    )
                 }
             }
         }

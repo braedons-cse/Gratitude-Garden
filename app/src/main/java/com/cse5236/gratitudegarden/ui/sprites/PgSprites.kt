@@ -88,10 +88,15 @@ private fun buildIcon(name: PgIconName, color: Color): ImageVector {
     return b.build()
 }
 
+/**
+ * [contentDescription] defaults to null so icons are treated as decorative and
+ * skipped by TalkBack — pass a label only when the icon is the sole content of an
+ * interactive control (e.g. an icon-only button), so screen readers announce it.
+ */
 @Composable
-fun PgIcon(name: PgIconName, color: Color, size: Dp) {
+fun PgIcon(name: PgIconName, color: Color, size: Dp, contentDescription: String? = null) {
     val vector = remember(name, color) { buildIcon(name, color) }
-    Image(imageVector = vector, contentDescription = null, modifier = Modifier.size(size))
+    Image(imageVector = vector, contentDescription = contentDescription, modifier = Modifier.size(size))
 }
 
 // ── Currency coin ────────────────────────────────────────────────

@@ -2,6 +2,7 @@ package com.cse5236.gratitudegarden.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,10 +76,15 @@ fun SignUpScreen(
                 .size(36.dp)
                 .clip(RoundedCornerShape(18.dp))
                 .background(Color.White.copy(alpha = 0.6f))
-                .clickable(onClick = onBackToLogin),
+                .clickable(onClickLabel = "Back to login", onClick = onBackToLogin),
             contentAlignment = Alignment.Center,
         ) {
-            PgIcon(name = PgIconName.Back, color = com.cse5236.gratitudegarden.ui.theme.PgInk, size = 18.dp)
+            PgIcon(
+                name = PgIconName.Back,
+                color = com.cse5236.gratitudegarden.ui.theme.PgInk,
+                size = 18.dp,
+                contentDescription = "Back to login",
+            )
         }
 
         Spacer(Modifier.height(14.dp))
@@ -146,7 +155,8 @@ fun SignUpScreen(
                     .size(20.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(if (consent) PgPrimary else Color.White)
-                    .clickable { consent = !consent },
+                    .semantics { contentDescription = "Accept the terms and privacy policy" }
+                    .toggleable(value = consent, role = Role.Checkbox) { consent = it },
                 contentAlignment = Alignment.Center,
             ) {
                 if (consent) PgIcon(name = PgIconName.Check, color = PgBgCream, size = 14.dp)

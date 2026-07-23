@@ -31,6 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -190,7 +192,16 @@ private fun WeekStrip(entryDates: Set<String>) {
         days.forEach { day ->
             val on = entryDates.contains(day.toString())
             val isToday = day == today
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val dayName = day.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+            val dayLabel = (if (isToday) "Today, $dayName" else dayName) +
+                if (on) ", entry logged" else ", no entry"
+            // Merge the weekday letter + dot into one spoken label so TalkBack reads
+            // "Monday, entry logged" instead of just the letter "M".
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.clearAndSetSemantics { contentDescription = dayLabel },
+            ) {
                 Text(
                     text = day.dayOfWeek.name.take(1),
                     fontFamily = Nunito,
