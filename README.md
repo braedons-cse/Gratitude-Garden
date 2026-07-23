@@ -7,7 +7,55 @@ through the official Supabase Kotlin client using the **anon key** only.
 
 ---
 
-## Latest changes — Daily streak reminders
+## Latest changes — Accessibility (TalkBack screen-reader support)
+
+The app now works with **TalkBack**, Android's built-in screen reader, so it is
+usable by people who are blind or have low vision. This is the checkpoint's
+**accessibility non-functional requirement (NFR)**.
+
+- **Every icon-only control is labeled.** The password show/hide toggle, the
+  sign-up back button, and the garden mic/record buttons now announce their
+  action and current state (e.g. "Show password" ↔ "Hide password").
+- **Interactive controls expose their role and state.** Bottom-nav items are
+  announced as tabs with a "selected" state; the sign-up terms box is announced
+  as a checkbox with a checked/unchecked state.
+- **Informational visuals read as one phrase.** Each journal week-strip day is
+  merged into a single label ("Monday, entry logged"), and garden plants
+  announce their name and growth stage ("Tulip, mature").
+- **Garden plants are now operable by screen reader.** Tapping a plant was a raw
+  gesture TalkBack could not reach; a semantics click action was added so plants
+  open with a TalkBack double-tap. Empty plots announce their grid position
+  ("Empty plot, row 2, column 3").
+- **Decorative icons stay silent.** Purely visual icons (stat flames, coins,
+  plant sprites) expose no description, so TalkBack skips them instead of reading
+  noise.
+
+### Testing with TalkBack on a physical device
+
+A physical Android phone is the most reliable way to verify this — an emulator
+driven with a mouse does not emulate TalkBack's touch exploration well.
+
+1. **Enable TalkBack:** Settings → Accessibility → TalkBack → toggle **On** and
+   accept the prompt. (Holding **both volume keys for 3 seconds** toggles it on/off.)
+2. **Learn the gestures** — touch behaves differently while TalkBack is on:
+   - **Swipe right / left** — move to the next / previous element (read aloud).
+   - **Double-tap anywhere** — activate the focused element.
+   - **Two-finger swipe** — scroll.
+3. **Walk the app** and confirm every control is announced meaningfully — nothing
+   should read as "unlabeled":
+   - **Login** — the password **eye** toggle → "Show password" / "Hide password".
+   - **Sign-up** — the **back** button → "Back to login"; the **terms** box →
+     "checkbox, not ticked / ticked".
+   - **Bottom nav** — each tab reads its name and "selected" when active.
+   - **Garden** — plants → "\<name\>, \<stage\>" and open on double-tap; empty
+     plots → "Empty plot, row X, column Y"; the **mic** → "Record a gratitude note".
+   - **Journal** — the week strip → "Monday, entry logged" / "…, no entry".
+4. **Turn TalkBack off** the same way (Settings → Accessibility → TalkBack, or the
+   volume-key shortcut).
+
+---
+
+## Previous update — Daily streak reminders
 
 The app can now send a **daily reminder notification** to help users keep their
 gratitude streak alive.
