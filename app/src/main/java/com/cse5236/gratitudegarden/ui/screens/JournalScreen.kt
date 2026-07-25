@@ -12,19 +12,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,7 +73,13 @@ fun JournalRoute() {
     LogComposableLifecycle(LogTags.JOURNAL_SCREEN)
     val vm: JournalViewModel = viewModel(factory = JournalViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
-    JournalScreen(ui = ui, onEdit = vm::edit, onDelete = vm::delete, onRefresh = vm::refresh)
+    JournalScreen(
+        ui = ui,
+        onEdit = vm::edit,
+        onDelete = vm::delete,
+        onRefresh = vm::refresh,
+        onLoadMore = vm::loadMore,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,76 +89,109 @@ fun JournalScreen(
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onRefresh: () -> Unit = {},
+    onLoadMore: () -> Unit = {},
 ) {
     var actionEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var editEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
+
+    // Ask the ViewModel for the next page as the user nears the end of the list.
+    // Only visible rows are ever composed (LazyColumn), and only ~one screen of
+    // entries is fetched/held at a time (keyset pagination in the ViewModel).
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            (info.visibleItemsInfo.lastOrNull()?.index ?: 0) to info.totalItemsCount
+        }
+            .distinctUntilChanged()
+            .collect { (lastVisible, total) ->
+                if (total > 0 && lastVisible >= total - 3) onLoadMore()
+            }
+    }
 
     PullToRefreshBox(
         isRefreshing = ui.refreshing,
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize().background(PgBgSage),
     ) {
-    Column(
+    LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp),
     ) {
-        Spacer(Modifier.height(14.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text("Journal", fontFamily = Caprasimo, fontSize = 26.sp, color = PgPrimaryDeep)
+        item(key = "header") {
+            Spacer(Modifier.height(14.dp))
             Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color.White.copy(alpha = 0.8f))
-                    .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 16.dp)
-                Spacer(Modifier.size(5.dp))
-                Text("${ui.streak}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
-                Spacer(Modifier.size(3.dp))
-                Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = PgInkMuted)
+                Text("Journal", fontFamily = Caprasimo, fontSize = 26.sp, color = PgPrimaryDeep)
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Color.White.copy(alpha = 0.8f))
+                        .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PgIcon(name = PgIconName.Flame, color = PgAccent, size = 16.dp)
+                    Spacer(Modifier.size(5.dp))
+                    Text("${ui.streak}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                    Spacer(Modifier.size(3.dp))
+                    Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = PgInkMuted)
+                }
             }
+
+            Spacer(Modifier.height(6.dp))
+            Row {
+                Text("${ui.totalEntries}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 13.5.sp, color = PgPrimaryDeep)
+                Text(" kind thoughts planted so far.", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = PgInkSoft)
+            }
+
+            Spacer(Modifier.height(12.dp))
+            WeekStrip(entryDates = ui.entryDates)
+            Spacer(Modifier.height(14.dp))
         }
-
-        Spacer(Modifier.height(6.dp))
-        Row {
-            Text("${ui.totalEntries}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 13.5.sp, color = PgPrimaryDeep)
-            Text(" kind thoughts planted so far.", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = PgInkSoft)
-        }
-
-        Spacer(Modifier.height(12.dp))
-        WeekStrip(entryDates = ui.entryDates)
-
-        Spacer(Modifier.height(14.dp))
 
         if (!ui.loading && ui.sections.isEmpty()) {
-            EmptyJournal()
+            item(key = "empty") { EmptyJournal() }
         }
 
         ui.sections.forEach { section ->
-            Text(
-                text = section.label.uppercase(),
-                fontFamily = Nunito,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 11.sp,
-                letterSpacing = 1.sp,
-                color = PgInkMuted,
-                modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
-            )
-            section.entries.forEach { entry ->
+            item(key = "section-${section.label}") {
+                Text(
+                    text = section.label.uppercase(),
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp,
+                    color = PgInkMuted,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+                )
+            }
+            items(section.entries, key = { it.id }) { entry ->
                 EntryCard(entry = entry, onClick = { actionEntry = entry })
                 Spacer(Modifier.height(8.dp))
             }
         }
 
-        Spacer(Modifier.height(20.dp))
+        if (ui.loadingMore) {
+            item(key = "loading-more") {
+                Text(
+                    "Loading more…",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = PgInkMuted,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+
+        item(key = "footer") { Spacer(Modifier.height(20.dp)) }
     }
     }
 

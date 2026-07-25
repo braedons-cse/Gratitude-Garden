@@ -18,3 +18,7 @@ local.properties
 .claude/
 .mcp.json
 claude-admin-dashboard-brief.md
+
+# Profiling heap dumps (large binaries — evidence lives in docs/)
+profiling/**/*.hprof
+profiling/**/*.raw

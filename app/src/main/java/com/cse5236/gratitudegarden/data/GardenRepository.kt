@@ -5,6 +5,9 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.filter.FilterOperator
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -112,6 +115,9 @@ data class Item(
 
 @Serializable
 private data class InventoryRow(@SerialName("item_id") val itemId: String)
+
+@Serializable
+private data class EntryDateRow(@SerialName("entry_date") val entryDate: String)
 
 @Serializable
 private data class NotifPromptRow(
@@ -226,6 +232,53 @@ class GardenRepository(private val client: SupabaseClient) {
         }.decodeList<GratitudeEntry>()
             .filter { it.deletedAt == null }
             .sortedByDescending { it.createdAt }
+    }
+
+    /** How many journal entries to fetch per page (see [entriesPage]). */
+    val entriesPageSize: Int get() = 20
+
+    /**
+     * One page of the signed-in user's gratitude entries, newest first.
+     *
+     * Optimization vs [entries]: the newest-first ordering and the soft-delete filter
+     * run server-side, and only [limit] rows are fetched — so the Journal no longer
+     * downloads, deserializes, sorts, and retains the user's *entire* history just to
+     * fill one screen. Pass [createdBefore] (the `createdAt` of the oldest row you
+     * already hold) to fetch the next page. This is keyset pagination: it stays
+     * correct even as new entries are inserted between page loads.
+     */
+    suspend fun entriesPage(
+        limit: Int = entriesPageSize,
+        createdBefore: String? = null,
+    ): List<GratitudeEntry> {
+        val uid = currentUid() ?: return emptyList()
+        return client.postgrest.from("gratitude_entries").select {
+            filter {
+                eq("user_id", uid)
+                filter("deleted_at", FilterOperator.IS, null)
+                if (createdBefore != null) lt("created_at", createdBefore)
+            }
+            order("created_at", Order.DESCENDING)
+            limit(limit.toLong())
+        }.decodeList<GratitudeEntry>()
+    }
+
+    /**
+     * The set of entry dates (`yyyy-MM-dd`) within the last [days] days — exactly what
+     * the Journal's week-strip needs, fetched as a narrow, bounded query instead of
+     * scanning the whole history. Compared in UTC to match how `entry_date` is stored.
+     */
+    suspend fun recentEntryDates(days: Int = 7): Set<String> {
+        val uid = currentUid() ?: return emptySet()
+        val since = LocalDate.now(ZoneOffset.UTC).minusDays((days - 1).toLong()).toString()
+        return client.postgrest.from("gratitude_entries")
+            .select(Columns.list("entry_date")) {
+                filter {
+                    eq("user_id", uid)
+                    filter("deleted_at", FilterOperator.IS, null)
+                    gte("entry_date", since)
+                }
+            }.decodeList<EntryDateRow>().map { it.entryDate }.toSet()
     }
 
     suspend fun garden(): Garden? {
