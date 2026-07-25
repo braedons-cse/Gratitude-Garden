@@ -764,8 +764,9 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
 }
 
 // ── New entry sheet (voice + text) ───────────────────────────────
+// `internal` (not `private`) so the androidTest source set can drive it in isolation.
 @Composable
-private fun NewEntrySheet(
+internal fun NewEntrySheet(
     submitting: Boolean,
     onDismiss: () -> Unit,
     onSubmit: (String, Boolean) -> Unit,

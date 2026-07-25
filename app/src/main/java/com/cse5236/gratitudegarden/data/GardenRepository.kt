@@ -67,14 +67,24 @@ data class UserStatsRow(
  * Dates are compared in UTC to match how `entry_date` / `last_entry_date` are
  * recorded server-side (`now() at time zone 'UTC'`).
  */
+/**
+ * Pure core of [effectiveStreak]: the still-alive streak *as of [today]*.
+ *
+ * Optimization: the clock is injected rather than read inside the function, so this
+ * is deterministic and unit-testable in isolation (no dependency on the machine's
+ * current date). [effectiveStreak] is the thin convenience wrapper that supplies the
+ * real UTC date. Behaviour is unchanged — the property below reads `today` exactly
+ * as before. See docs/unit-test-optimizations.md.
+ */
+fun UserStatsRow.effectiveStreakOn(today: LocalDate): Int {
+    val last = lastEntryDate
+        ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        ?: return 0
+    return if (last == today || last == today.minusDays(1)) currentStreak else 0
+}
+
 val UserStatsRow.effectiveStreak: Int
-    get() {
-        val last = lastEntryDate
-            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            ?: return 0
-        val today = LocalDate.now(ZoneOffset.UTC)
-        return if (last == today || last == today.minusDays(1)) currentStreak else 0
-    }
+    get() = effectiveStreakOn(LocalDate.now(ZoneOffset.UTC))
 
 @Serializable
 data class WalletRow(val balance: Int = 0)

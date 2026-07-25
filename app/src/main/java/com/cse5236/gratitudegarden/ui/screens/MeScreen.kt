@@ -67,6 +67,7 @@ import com.cse5236.gratitudegarden.ui.components.PgTextField
 import com.cse5236.gratitudegarden.ui.components.PillButton
 import com.cse5236.gratitudegarden.ui.me.MeViewModel
 import com.cse5236.gratitudegarden.util.findActivity
+import com.cse5236.gratitudegarden.util.formatTime
 import com.cse5236.gratitudegarden.ui.sprites.CoinIcon
 import com.cse5236.gratitudegarden.ui.sprites.MaturePlant
 import com.cse5236.gratitudegarden.ui.sprites.PgIcon
@@ -734,17 +735,6 @@ private fun WheelColumn(
             }
         }
     }
-}
-
-/** 24h hour/minute → "8:00 PM" (locale-independent). */
-private fun formatTime(hour: Int, minute: Int): String {
-    val h12 = when {
-        hour == 0 -> 12
-        hour > 12 -> hour - 12
-        else -> hour
-    }
-    val amPm = if (hour < 12) "AM" else "PM"
-    return "%d:%02d %s".format(h12, minute, amPm)
 }
 
 @Composable

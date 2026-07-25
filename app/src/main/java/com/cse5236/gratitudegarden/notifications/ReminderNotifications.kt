@@ -64,11 +64,23 @@ object ReminderNotifications {
      * reminder never shows the same text two days running). Pure/testable; pass a
      * seeded [random] in tests. Returns 0 when there's only one message, and treats
      * a [lastIndex] of -1 (nothing shown yet) as "anything goes".
+     *
+     * Optimization: instead of materializing a filtered `List` of candidate indices
+     * on every call (`MESSAGES.indices.filter { it != lastIndex }` — one throwaway
+     * list + boxing per invocation), draw uniformly from the `n - 1` messages that
+     * differ from [lastIndex] and shift the result past the gap. Same output set and
+     * uniform distribution, but O(1) and allocation-free. See
+     * docs/unit-test-optimizations.md.
      */
     fun pickMessageIndex(lastIndex: Int, random: Random = Random.Default): Int {
-        if (MESSAGES.size <= 1) return 0
-        val choices = MESSAGES.indices.filter { it != lastIndex }
-        return choices[random.nextInt(choices.size)]
+        val n = MESSAGES.size
+        if (n <= 1) return 0
+        // -1 ("nothing shown yet") or any out-of-range value: every message is fair game.
+        if (lastIndex !in 0 until n) return random.nextInt(n)
+        // Draw from [0, n-2] — the n-1 indices that aren't lastIndex — then hop over
+        // the gap so lastIndex itself can never be produced.
+        val draw = random.nextInt(n - 1)
+        return if (draw < lastIndex) draw else draw + 1
     }
 
     /** Idempotent — safe to call repeatedly. */
