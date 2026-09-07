@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Account deletion — self-service + admin, wiping the whole account
 -- ----------------------------------------------------------------------------
--- Applied to the live project (ref: aprqarsmrtosvzisvqhw) via the Supabase
+-- Applied to the live project (ref: wllqgdjkkhztbefdvvsf) via the Supabase
 -- migration `account_deletion_rpcs`. Reproduced here for version control.
 -- Safe to re-run (idempotent).
 --

@@ -33,7 +33,7 @@ android {
 
         buildConfigField(
             "String", "SUPABASE_URL",
-            "\"${secret("SUPABASE_URL", "https://aprqarsmrtosvzisvqhw.supabase.co")}\"",
+            "\"${secret("SUPABASE_URL", "https://wllqgdjkkhztbefdvvsf.supabase.co")}\"",
         )
         buildConfigField(
             "String", "SUPABASE_ANON_KEY",

@@ -322,7 +322,7 @@ typed `AdminField`s). Rows flow through the repository as plain `JsonObject`s.
    Android Studio), e.g. `sdk.dir=C:/Users/<you>/AppData/Local/Android/Sdk`.
 2. **Supabase keys** — add to the same `local.properties` (gitignored):
    ```properties
-   SUPABASE_URL=https://aprqarsmrtosvzisvqhw.supabase.co
+   SUPABASE_URL=https://wllqgdjkkhztbefdvvsf.supabase.co
    SUPABASE_ANON_KEY=<your anon key>
    ```
    These are surfaced to code as `BuildConfig.SUPABASE_URL` / `BuildConfig.SUPABASE_ANON_KEY`.

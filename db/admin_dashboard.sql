@@ -2,7 +2,7 @@
 -- Checkpoint 4 — Admin CRUD Dashboard: Supabase schema + security changes
 -- ----------------------------------------------------------------------------
 -- This file documents the SQL that backs the admin dashboard. It was applied to
--- the live project (ref: aprqarsmrtosvzisvqhw) via the Supabase migration
+-- the live project (ref: wllqgdjkkhztbefdvvsf) via the Supabase migration
 -- `admin_flag_and_policies`. It is reproduced here so the change is captured in
 -- version control. Safe to re-run (idempotent).
 --
