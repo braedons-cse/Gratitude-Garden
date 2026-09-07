@@ -210,6 +210,14 @@ their own rows). New accounts are provisioned by the `handle_new_user` trigger, 
 gameplay mutations go through `SECURITY DEFINER` RPCs (`submit_gratitude_entry`,
 `purchase_item`, `place_plant`, `water_plant`, …).
 
+### Migrations
+
+`supabase/migrations/` holds the complete schema history — every table, enum, RLS policy,
+trigger, and RPC above, in the order it was applied. Replaying all twelve files against an
+empty project reproduces the backend exactly. The four files under `db/` are older
+hand-written notes covering a subset of the same changes; `supabase/migrations/` is the
+source of truth.
+
 ---
 
 ## Admin CRUD Dashboard (Checkpoint 4)
