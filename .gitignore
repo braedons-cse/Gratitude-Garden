@@ -22,3 +22,9 @@ claude-admin-dashboard-brief.md
 # Profiling heap dumps (large binaries — evidence lives in docs/)
 profiling/**/*.hprof
 profiling/**/*.raw
+
+#Personal Files
+Start-Claude-No-Remote-Control.bat
+
+# Play Store planning notes (local brainstorm, not shared)
+PLAY-STORE-ROADMAP.md
