@@ -357,8 +357,14 @@ class GardenRepository(private val client: SupabaseClient) {
     // The reminder *preferences* (on/off + time) are stored locally on the
     // device; only this one-time "have we already asked?" flag lives in
     // user_settings so the prompt is shown exactly once per account, not per
-    // install. handle_new_user() guarantees the row exists, so a plain UPDATE
-    // is enough (there is no INSERT policy on user_settings).
+    // install.
+    //
+    // The write goes through an RPC, not a plain UPDATE: user_settings has no
+    // owner UPDATE policy at all (20260916210000 dropped it), because
+    // daily_entry_cap lives in this table and submit_gratitude_entry reads it as
+    // the daily earnings ceiling -- a client-writable cap is a coin printer.
+    // mark_notif_prompt_seen() is a no-argument one-way latch, so there is
+    // nothing here for a caller to name.
 
     /** True once the enable-reminders prompt has been shown (accepted or declined). */
     suspend fun notifPromptSeen(): Boolean {
@@ -369,12 +375,10 @@ class GardenRepository(private val client: SupabaseClient) {
     }
 
     suspend fun markNotifPromptSeen() {
-        val uid = currentUid() ?: return
-        client.postgrest.from("user_settings").update(
-            buildJsonObject { put("notif_prompt_seen", true) },
-        ) {
-            filter { eq("user_id", uid) }
-        }
+        // The RPC derives the user from auth.uid() and raises if there is none;
+        // the local guard just avoids a pointless round trip when signed out.
+        currentUid() ?: return
+        client.postgrest.rpc("mark_notif_prompt_seen")
     }
 
     // ── Shop / inventory / garden interactions ───────────────────────

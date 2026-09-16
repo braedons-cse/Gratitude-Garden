@@ -33,7 +33,9 @@ shippable product.
 - [Project structure](#project-structure)
 - [App architecture](#app-architecture)
 - [Supabase backend](#supabase-backend)
+  - [Client write surface](#client-write-surface)
   - [Server-authoritative economy](#server-authoritative-economy)
+    - [A policy constrains which row, never which columns](#a-policy-constrains-which-row-never-which-columns)
 - [Feature notes](#feature-notes)
   - [Accessibility (TalkBack)](#accessibility-talkback)
   - [Daily streak reminders](#daily-streak-reminders)
@@ -59,7 +61,7 @@ but disqualifying on a public store listing.
 | 0.2 | **Signing, minification, real release build** | S/M | No signing config exists and R8 is off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
 | 0.3 | **Get the admin dashboard out of the consumer build** | S | `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
 | 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, microphone, notifications. The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
-| 0.5 | **Harden secrets and key handling** | S | ✅ **Economy done** — two coin-minting holes closed; see [Server-authoritative economy](#server-authoritative-economy). The anon key is public by design, so the rest of the model rests on RLS being right. Still to do: audit every policy on all nine tables with an untrusted-client mindset, and turn on leaked-password protection (a dashboard toggle the advisor still flags — Auth → Providers → Password). |
+| 0.5 | **Harden secrets and key handling** | S | ✅ **Economy and RLS audit done** — two coin-minting holes closed, then the policy audit found three more (a privilege escalation among them) and closed those too; see [Server-authoritative economy](#server-authoritative-economy) and [Client write surface](#client-write-surface). Still to do: turn on leaked-password protection (a dashboard toggle the advisor still flags — Auth → Providers → Password). |
 | 0.6 | **Crash reporting and basic analytics** | S | Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
 | 0.7 | **Store listing assets** | M | Feature graphic, 4–8 phone screenshots (ideally a short video), 512px icon, short + full description, content rating questionnaire. The launcher icon is still the Android Studio template — that alone reads as "unfinished" in search results. Design work, routinely underestimated. |
 | 0.8 | **Notification & alarm permission posture** | S | We hold `SCHEDULE_EXACT_ALARM` with a documented inexact fallback. Play scrutinizes exact alarms and a daily journaling nudge is unlikely to qualify for an exemption. Move the reminder fully to WorkManager and drop the permission (and `RECEIVE_BOOT_COMPLETED` with it). Fewer sensitive permissions = smoother review. |
@@ -208,7 +210,7 @@ app/src/main/java/com/cse5236/gratitudegarden/
 │     └─ AdminDashboardScreen.kt   # the admin dashboard UI
 └─ util/                           # lifecycle logging helpers
 
-supabase/migrations/                # source of truth for the schema (12 files)
+supabase/migrations/                # source of truth for the schema (14 files)
 db/                                 # older hand-written SQL notes (subset of the above)
 docs/                               # perf + test-optimization write-ups
 profiling/                          # before/after profiling evidence
@@ -265,10 +267,25 @@ gameplay mutations go through `SECURITY DEFINER` RPCs (`submit_gratitude_entry`,
 ### Migrations
 
 `supabase/migrations/` holds the complete schema history — every table, enum, RLS policy,
-trigger, and RPC above, in the order it was applied. Replaying all thirteen files against an
+trigger, and RPC above, in the order it was applied. Replaying all fourteen files against an
 empty project reproduces the backend exactly. The four files under `db/` are older
 hand-written notes covering a subset of the same changes; `supabase/migrations/` is the
 source of truth.
+
+### Client write surface
+
+After `20260916210000_lock_client_write_surface`, a **non-admin client can perform exactly
+three kinds of write**, and every one of them is server-validated:
+
+| Path | How |
+| --- | --- |
+| The gameplay RPCs | `submit_gratitude_entry`, `edit_gratitude_entry`, `delete_gratitude_entry`, `purchase_item`, `place_plant`, `move_plant`, `water_plant`, `set_active_backdrop`, `delete_current_user`, `mark_notif_prompt_seen` — all `SECURITY DEFINER`, all deriving the user from `auth.uid()` |
+| `garden_plants` DELETE | `garden_plants_delete_own`, scoped through `gardens.user_id`. A DELETE is all-or-nothing, so there is no column subset to abuse |
+| Nothing else | There are **no INSERT policies at all**, and after 0.5 there are **no self-serve UPDATE policies at all** |
+
+`anon` holds no table privileges whatsoever, and `authenticated` no longer holds
+`TRUNCATE` / `TRIGGER` / `REFERENCES` (TRUNCATE is *not* subject to row security, so that
+grant would have bypassed RLS entirely the moment any other SQL path opened up).
 
 ### Server-authoritative economy
 
@@ -335,6 +352,43 @@ Scaling it by growth stage would be a balance change rather than a security fix.
 > both functions; without that step, dropping them would have silently undone existing
 > hardening. It also revokes `anon` on `move_plant` and `is_current_user_admin`, which were
 > added after `07_advisor_fixes` and never got the same treatment.
+
+### A policy constrains which *row*, never which *columns*
+
+Making the amounts server-authoritative fixed only half the problem. The audit that followed
+(migration `20260916210000_lock_client_write_surface`) found three more holes, all one bug:
+
+`profiles_update_own`, `user_settings_update_own`, and `gardens_update_own` were each written
+as `using (auth.uid() = <owner>) with check (auth.uid() = <owner>)`. That is a correct
+*ownership* check and a complete non-answer to *column* safety — and `authenticated` also held
+a table-wide `UPDATE` grant. Postgres `WITH CHECK` cannot reference `OLD`, so a policy is
+structurally incapable of saying "this column may not change."
+
+| | What it allowed |
+| --- | --- |
+| `profiles` | `PATCH {"is_admin": true}` on your own row. That activates the nine `<table>_admin_all` policies — full read/write over **every** table, including every other user's journal entries. It also trivially defeats the work above: an admin writes `coin_wallets.balance` directly. |
+| `user_settings` | `PATCH {"daily_entry_cap": 100000}`. `submit_gratitude_entry` reads that column as the daily earnings ceiling — a third coin printer. The economy migration had hardened how the cap is *counted*, but not where it *comes from*. |
+| `gardens` | `PATCH {"active_backdrop_item_id": …}` equips an unowned item, bypassing `purchase_item`. `set_active_backdrop` checks ownership correctly; the policy just let the client skip it. `grid_rows`/`grid_cols` were free garden expansion. |
+
+**The fix is to drop the policies, not to restrict the columns.** Column-level `GRANT`s are
+the obvious tool and the wrong one here: grants are scoped to a *role*, and admins **are**
+members of `authenticated` — there is no separate Postgres role for them, only the
+`is_current_user_admin()` predicate. Revoking `update (is_admin)` would take the admin
+dashboard down with it. Dropping the policy does not, because admin access comes from the
+separate **permissive** `<table>_admin_all` policy, and permissive policies are `OR`'d —
+removing one branch of a disjunction cannot affect another. The live proof was already in the
+schema: no table has *any* INSERT policy, yet admin create has always worked, purely because
+`<table>_admin_all` is `FOR ALL`.
+
+`is_admin` additionally gets a `BEFORE UPDATE` trigger as a second, independent lock, since it
+is the single value that unlocks all nine admin policies. It discriminates on `current_user`
+(`authenticated` for a user JWT, `postgres` in the SQL editor) rather than on
+`is_current_user_admin()` alone — otherwise it would break the documented
+[admin-granting procedure](#granting--changing-admins), where `auth.uid()` is null.
+
+> **Expect silence, not a 403.** With the policy gone, a non-admin `PATCH` doesn't error — RLS
+> matches zero rows and PostgREST returns `204 No Content`. Verify these by re-reading the row,
+> never by asserting on the status code.
 
 ---
 
