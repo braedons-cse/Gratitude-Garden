@@ -186,16 +186,29 @@ class GardenRepository(private val client: SupabaseClient) {
 
     // ── Gratitude entries (RPCs) ─────────────────────────────────────
     // rpc() takes a JsonObject of the function's named args.
-    suspend fun submitEntry(text: String, voice: Boolean) {
-        client.postgrest.rpc(
+    /**
+     * Plant a gratitude entry.
+     *
+     * The coin reward is decided **server-side** — it varies with the user's
+     * streak and how substantive the entry is — so it is never sent from here.
+     * The anon key ships in the APK, so anything the client names as a reward is
+     * really just a suggestion an attacker can rewrite.
+     *
+     * Returns the coins actually awarded, or null if the reply couldn't be
+     * decoded. The entry saves either way, and the balance is re-read by
+     * [changes] collectors regardless, so a null only costs the "+N" in the
+     * confirmation toast.
+     */
+    suspend fun submitEntry(text: String, voice: Boolean): Int? {
+        val result = client.postgrest.rpc(
             "submit_gratitude_entry",
             buildJsonObject {
                 put("p_entry_text", text)
                 put("p_input_method", if (voice) "voice_to_text" else "text")
-                put("p_coin_reward", 5)
             },
         )
         notifyChanged()
+        return runCatching { result.decodeAs<GratitudeEntry>().coinsAwarded }.getOrNull()
     }
 
     suspend fun editEntry(id: String, newText: String) {
@@ -232,6 +245,30 @@ class GardenRepository(private val client: SupabaseClient) {
         }.decodeList<GratitudeEntry>()
             .filter { it.deletedAt == null }
             .sortedByDescending { it.createdAt }
+    }
+
+    /**
+     * How many entries the user has written today, **including soft-deleted ones**.
+     *
+     * This has to match `submit_gratitude_entry`'s cap check exactly, and that check
+     * counts deleted entries too: `delete_gratitude_entry` stamps `deleted_at` without
+     * refunding the coins, so a deleted entry has still been paid for. Counting only
+     * the live rows here would show "N thoughts left" for entries the server will
+     * refuse — and [entries] filters deleted rows out, so it is the wrong source.
+     *
+     * Uses UTC to match the server's `(now() at time zone 'UTC')::date`, as
+     * [UserStatsRow.effectiveStreak] and [entryDatesSince] already do.
+     */
+    suspend fun entriesTodayCount(): Int {
+        val uid = currentUid() ?: return 0
+        val today = LocalDate.now(ZoneOffset.UTC).toString()
+        return client.postgrest.from("gratitude_entries")
+            .select(Columns.list("entry_date")) {
+                filter {
+                    eq("user_id", uid)
+                    eq("entry_date", today)
+                }
+            }.decodeList<EntryDateRow>().size
     }
 
     /** How many journal entries to fetch per page (see [entriesPage]). */
@@ -376,13 +413,11 @@ class GardenRepository(private val client: SupabaseClient) {
         notifyChanged()
     }
 
-    suspend fun waterPlant(plantId: String, cost: Int = 10) {
+    /** Water a plant. The cost is decided and charged server-side. */
+    suspend fun waterPlant(plantId: String) {
         client.postgrest.rpc(
             "water_plant",
-            buildJsonObject {
-                put("p_plant_id", plantId)
-                put("p_water_cost", cost)
-            },
+            buildJsonObject { put("p_plant_id", plantId) },
         )
         notifyChanged()
     }

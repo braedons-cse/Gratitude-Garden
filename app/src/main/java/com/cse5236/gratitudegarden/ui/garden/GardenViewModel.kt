@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 
 data class GardenUiState(
     val loading: Boolean = true,
@@ -67,11 +66,14 @@ class GardenViewModel(
             val stats = repo.stats()
             val garden = repo.garden()
             val plants = repo.plants()
-            val entries = repo.entries()
             val slugs = repo.itemSlugs()
             val owned = repo.ownedSeeds()
-            val today = LocalDate.now().toString()
-            val used = entries.count { it.entryDate == today }
+            // Counted server-side over today's rows only. This used to filter a
+            // full repo.entries() fetch — the user's entire history — client-side,
+            // which both wasted the round trip and dropped soft-deleted rows. Those
+            // still count against the daily cap, because deleting an entry doesn't
+            // refund its coins.
+            val used = repo.entriesTodayCount()
             _ui.update {
                 it.copy(
                     loading = false,
@@ -97,9 +99,12 @@ class GardenViewModel(
         _ui.update { it.copy(submitting = true) }
         viewModelScope.launch {
             try {
-                repo.submitEntry(text.trim(), voice)
+                val awarded = repo.submitEntry(text.trim(), voice)
                 load()
-                _ui.update { it.copy(submitting = false, message = "+5 coins · a kind thought planted 🌱") }
+                // The server decides the reward, so the toast reports what was
+                // actually awarded rather than promising a fixed number.
+                val note = if (awarded != null) "+$awarded coins · " else ""
+                _ui.update { it.copy(submitting = false, message = "${note}a kind thought planted 🌱") }
                 maybeOfferReminders()
             } catch (e: Exception) {
                 _ui.update { it.copy(submitting = false, message = e.message ?: "Couldn't save your thought") }
@@ -141,7 +146,7 @@ class GardenViewModel(
         _ui.update { it.copy(watering = true) }
         viewModelScope.launch {
             try {
-                repo.waterPlant(plantId, 10)
+                repo.waterPlant(plantId)
                 load()
                 _ui.update { it.copy(watering = false, message = "Watered 🌱 · -10 coins") }
             } catch (e: Exception) {

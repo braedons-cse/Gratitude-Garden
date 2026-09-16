@@ -33,6 +33,7 @@ shippable product.
 - [Project structure](#project-structure)
 - [App architecture](#app-architecture)
 - [Supabase backend](#supabase-backend)
+  - [Server-authoritative economy](#server-authoritative-economy)
 - [Feature notes](#feature-notes)
   - [Accessibility (TalkBack)](#accessibility-talkback)
   - [Daily streak reminders](#daily-streak-reminders)
@@ -58,7 +59,7 @@ but disqualifying on a public store listing.
 | 0.2 | **Signing, minification, real release build** | S/M | No signing config exists and R8 is off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
 | 0.3 | **Get the admin dashboard out of the consumer build** | S | `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
 | 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, microphone, notifications. The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
-| 0.5 | **Harden secrets and key handling** | S | The anon key is public by design, so the entire security model rests on RLS being right. Audit every policy on all nine tables with an untrusted-client mindset, run the Supabase advisors, and confirm the coin economy is server-authoritative — if `purchaseItem` / `waterPlant` costs can be manipulated client-side, the game is free. |
+| 0.5 | **Harden secrets and key handling** | S | ✅ **Economy done** — two coin-minting holes closed; see [Server-authoritative economy](#server-authoritative-economy). The anon key is public by design, so the rest of the model rests on RLS being right. Still to do: audit every policy on all nine tables with an untrusted-client mindset, and turn on leaked-password protection (a dashboard toggle the advisor still flags — Auth → Providers → Password). |
 | 0.6 | **Crash reporting and basic analytics** | S | Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
 | 0.7 | **Store listing assets** | M | Feature graphic, 4–8 phone screenshots (ideally a short video), 512px icon, short + full description, content rating questionnaire. The launcher icon is still the Android Studio template — that alone reads as "unfinished" in search results. Design work, routinely underestimated. |
 | 0.8 | **Notification & alarm permission posture** | S | We hold `SCHEDULE_EXACT_ALARM` with a documented inexact fallback. Play scrutinizes exact alarms and a daily journaling nudge is unlikely to qualify for an exemption. Move the reminder fully to WorkManager and drop the permission (and `RECEIVE_BOOT_COMPLETED` with it). Fewer sensitive permissions = smoother review. |
@@ -264,10 +265,76 @@ gameplay mutations go through `SECURITY DEFINER` RPCs (`submit_gratitude_entry`,
 ### Migrations
 
 `supabase/migrations/` holds the complete schema history — every table, enum, RLS policy,
-trigger, and RPC above, in the order it was applied. Replaying all twelve files against an
+trigger, and RPC above, in the order it was applied. Replaying all thirteen files against an
 empty project reproduces the backend exactly. The four files under `db/` are older
 hand-written notes covering a subset of the same changes; `supabase/migrations/` is the
 source of truth.
+
+### Server-authoritative economy
+
+**The client never names a price or a reward.** This is load-bearing: the anon key ships
+inside the APK, so anything the app sends as an economy value is only a suggestion that an
+attacker can rewrite before it reaches PostgREST.
+
+Migration `20260910051500_server_authoritative_economy` closed **two independent** ways to
+mint coins.
+
+**Hole 1 — the amount came from the client.**
+
+- `submit_gratitude_entry(..., p_coin_reward int default 5)` validated only `p_coin_reward >= 0`,
+  then credited the wallet with it. A single POST with `p_coin_reward: 2147483647` minted
+  max-int coins.
+- `water_plant(..., p_water_cost int default 10)` had the same shape: pass `0`, water forever.
+
+Both parameters are gone. Because Postgres cannot drop a parameter via `CREATE OR REPLACE`,
+and because PostgREST picks an overload by matching the JSON body keys against parameter
+names — so a surviving 3-arg version would still be reachable by a client that sends
+`p_coin_reward`, making the exploit payload its own overload selector — the old signatures
+are **dropped**, not superseded.
+
+**Hole 2 — the daily cap wasn't a cap.** `daily_entry_cap` counted only `deleted_at is null`
+entries, but `delete_gratitude_entry` just stamps `deleted_at`; it never refunds the coins.
+So `submit → delete → submit → delete` earned without limit no matter what a single entry
+paid — reachable from the app's own delete button, no crafted request needed. The cap now
+counts **every** entry written today, deleted ones included: you were paid for it, so it
+still counts. (Refunding coins on delete was the alternative; it can drive a wallet negative
+and touches a second RPC, so the tighter fix won.) `GardenRepository.entriesTodayCount()`
+mirrors this server-side count so the "thoughts left today" chip can't promise entries the
+server will refuse.
+
+**How the reward is derived.** `public.entry_reward(text, streak, first_of_day)` is a pure
+`immutable` function, split out so it can be tested on its own
+(`select public.entry_reward('…', 14, true);`) and retuned in one place:
+
+| Component | Range | Notes |
+| --- | --- | --- |
+| Base | `5` | The old flat reward, kept as a floor so nothing became stingier and the 50–220 coin item prices stay meaningful |
+| Effort | `0–3` | `+1` per 40 characters, capped at 3 — so it stops paying at 120. Whitespace runs are collapsed first, so padding with newlines buys nothing and a 10,000-character paste earns exactly what a 120-character paragraph does |
+| Streak | `0–5` | `+1` per full week, **first entry of the day only** |
+
+The streak bonus is restricted to the day's first entry on purpose: `next_streak` returns
+`greatest(prev_streak, 1)` when the date is unchanged, so a streak never advances within a
+day, and paying the bonus on all ten allowed entries would multiply it tenfold. Net range is
+**5–13** for the first entry of a day and **5–8** after that — verified by brute force across
+600 lengths × 400 streak values.
+
+Because `submit_gratitude_entry` now reads `user_stats` before the insert (the reward depends
+on the streak and is stored on the row), it takes `coin_wallets FOR UPDATE` **first**, keeping
+the `coin_wallets → user_stats` lock order that `water_plant` and `purchase_item` already use.
+Acquiring them in the opposite order would open a same-user deadlock window.
+
+Watering is held at a flat server-side `10`, matching the previous cost so the
+"Water · 10 coins" label and the affordability gate in `GardenScreen.kt` stay truthful.
+Scaling it by growth stage would be a balance change rather than a security fix.
+
+`purchase_item(p_item_id uuid)` never had this problem — it has always read
+`items.price_coins` server-side, and is the pattern the other two now follow.
+
+> **Grants are attached to a function signature, so `DROP FUNCTION` discards them.** The
+> migration re-applies the `revoke ... from anon` that `07_advisor_fixes` had established on
+> both functions; without that step, dropping them would have silently undone existing
+> hardening. It also revokes `anon` on `move_plant` and `is_current_user_admin`, which were
+> added after `07_advisor_fixes` and never got the same treatment.
 
 ---
 
