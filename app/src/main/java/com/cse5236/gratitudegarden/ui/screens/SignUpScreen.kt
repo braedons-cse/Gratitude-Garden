@@ -26,8 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -48,6 +50,7 @@ import com.cse5236.gratitudegarden.ui.theme.PgInkSoft
 import com.cse5236.gratitudegarden.ui.theme.PgMoss
 import com.cse5236.gratitudegarden.ui.theme.PgPrimary
 import com.cse5236.gratitudegarden.ui.theme.PgPrimaryDeep
+import com.cse5236.gratitudegarden.util.passwordProblem
 
 private val ErrorRed = Color(0xFFB3261E)
 
@@ -62,6 +65,10 @@ fun SignUpScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var consent by remember { mutableStateOf(true) }
+
+    // Mirrors the Supabase Auth password policy so the rule is enforced where the user can
+    // see it. null once the password is acceptable. See util/PasswordRules.kt.
+    val passwordProblem = passwordProblem(password)
 
     Column(
         modifier = Modifier
@@ -138,11 +145,34 @@ fun SignUpScreen(
         PgTextField(
             value = password,
             onValueChange = { password = it },
-            placeholder = "At least 8 characters",
+            placeholder = "Create a password",
             label = "Password",
             icon = PgIconName.Lock,
             isPassword = true,
             imeAction = ImeAction.Done,
+        )
+
+        // Stated up front rather than only on failure: with four character classes required,
+        // a user who learns the rule one rejection at a time gives up. Muted until they have
+        // typed something that does not satisfy it.
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = if (password.isEmpty() || passwordProblem == null) {
+                "8+ characters, with an uppercase, lowercase, number and symbol."
+            } else {
+                "Needs $passwordProblem."
+            },
+            color = if (password.isEmpty() || passwordProblem == null) PgInkSoft else ErrorRed,
+            fontFamily = Nunito,
+            fontSize = 12.5.sp,
+            lineHeight = 18.sp,
+            modifier = Modifier
+                .padding(start = 4.dp)
+                // The text swaps between hint and error as the user types, and the only other
+                // signal is the submit button greying out -- which TalkBack reports on focus,
+                // long after the change. Polite (not Assertive) so it waits for a pause in
+                // typing instead of interrupting every keystroke.
+                .semantics { liveRegion = LiveRegionMode.Polite },
         )
 
         Spacer(Modifier.height(16.dp))
@@ -185,8 +215,12 @@ fun SignUpScreen(
 
         PillButton(
             text = if (loading) "Planting…" else "Start growing",
-            onClick = { if (!loading && consent) onSignUp(name, email, password) },
-            enabled = !loading && consent,
+            onClick = {
+                if (!loading && consent && passwordProblem == null) {
+                    onSignUp(name, email, password)
+                }
+            },
+            enabled = !loading && consent && passwordProblem == null,
             modifier = Modifier.fillMaxWidth(),
         )
 

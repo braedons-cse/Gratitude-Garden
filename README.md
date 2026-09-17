@@ -128,7 +128,7 @@ per unit of work.
   survive photos + seasons + insights. Split by feature; extract the garden canvas.
 - **Dependency injection — S/M.** `AppContainer` hand-rolls it today; Hilt pays for itself
   once there's a sync layer, a work scheduler, and a billing client.
-- **Test depth — M.** Currently 4 unit tests + 3 UI tests. A public app needs repository
+- **Test depth — M.** Currently 5 unit-test classes (16 cases) + 3 UI tests. A public app needs repository
   tests against a fake backend, sync-conflict tests, and a smoke suite run against the
   **release** build (post-R8).
 - **CI/CD — S/M.** GitHub Actions running lint + tests on PRs, Play Console internal-track
