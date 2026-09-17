@@ -15,7 +15,7 @@ fun secret(key: String, fallback: String = ""): String =
     localProperties.getProperty(key) ?: System.getenv(key) ?: fallback
 
 android {
-    namespace = "com.cse5236.gratitudegarden"
+    namespace = "com.gratitudegarden.app"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -23,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.cse5236.gratitudegarden"
+        applicationId = "com.gratitudegarden.app"
         minSdk = 28
         targetSdk = 36
         versionCode = 1
