@@ -28,20 +28,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gratitudegarden.app.ui.components.PgTextField
+import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
 import com.gratitudegarden.app.ui.components.SocialButton
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.PottedPlant
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.GratitudeGardenTheme
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 
 private val ErrorRed = Color(0xFFB3261E)
 
@@ -59,7 +59,7 @@ fun LoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PgBgSage)
+            .background(GgBgSage)
             .verticalScroll(rememberScrollState())
             .padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -75,7 +75,7 @@ fun LoginScreen(
             text = "Welcome back",
             fontFamily = Caprasimo,
             fontSize = 32.sp,
-            color = PgPrimaryDeep,
+            color = GgPrimaryDeep,
             letterSpacing = (-0.5).sp,
         )
         Spacer(Modifier.height(6.dp))
@@ -85,24 +85,24 @@ fun LoginScreen(
             fontWeight = FontWeight.Medium,
             fontSize = 14.5.sp,
             lineHeight = 21.sp,
-            color = PgInkSoft,
+            color = GgInkSoft,
         )
 
         Spacer(Modifier.height(28.dp))
 
-        PgTextField(
+        GgTextField(
             value = email,
             onValueChange = { email = it },
             placeholder = "Email",
-            icon = PgIconName.Mail,
+            icon = GgIconName.Mail,
             keyboardType = KeyboardType.Email,
         )
         Spacer(Modifier.height(12.dp))
-        PgTextField(
+        GgTextField(
             value = password,
             onValueChange = { password = it },
             placeholder = "Password",
-            icon = PgIconName.Lock,
+            icon = GgIconName.Lock,
             isPassword = true,
             imeAction = ImeAction.Done,
         )
@@ -116,7 +116,7 @@ fun LoginScreen(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgPrimary,
+                color = GgPrimary,
                 modifier = Modifier.clickable(onClick = onForgotPassword),
             )
         }
@@ -144,16 +144,16 @@ fun LoginScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(Modifier.weight(1f).height(1.dp).background(PgMoss))
+            Box(Modifier.weight(1f).height(1.dp).background(GgMoss))
             Text(
                 text = "OR",
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
                 letterSpacing = 0.5.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
             )
-            Box(Modifier.weight(1f).height(1.dp).background(PgMoss))
+            Box(Modifier.weight(1f).height(1.dp).background(GgMoss))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -168,14 +168,14 @@ fun LoginScreen(
                 text = "New to the garden? ",
                 fontFamily = Nunito,
                 fontSize = 14.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
             )
             Text(
                 text = "Plant your first seed",
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = PgPrimary,
+                color = GgPrimary,
                 modifier = Modifier.clickable(onClick = onSignUp),
             )
         }

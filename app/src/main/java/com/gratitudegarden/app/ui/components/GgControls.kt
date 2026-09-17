@@ -38,26 +38,26 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gratitudegarden.app.ui.sprites.PgIcon
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgBgCream
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInk
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgBgCream
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInk
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import com.gratitudegarden.app.ui.theme.pressScale
 
 /** White, moss-bordered text field with a leading icon and optional label. */
 @Composable
-fun PgTextField(
+fun GgTextField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
-    icon: PgIconName,
+    icon: GgIconName,
     modifier: Modifier = Modifier,
     label: String? = null,
     isPassword: Boolean = false,
@@ -73,7 +73,7 @@ fun PgTextField(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
                 modifier = Modifier.padding(start = 4.dp),
             )
         }
@@ -83,11 +83,11 @@ fun PgTextField(
                 .height(52.dp)
                 .clip(shape)
                 .background(Color.White)
-                .border(1.5.dp, PgMoss, shape)
+                .border(1.5.dp, GgMoss, shape)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PgIcon(name = icon, color = PgPrimary, size = 18.dp)
+            GgIcon(name = icon, color = GgPrimary, size = 18.dp)
             Spacer(Modifier.width(10.dp))
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) {
@@ -96,7 +96,7 @@ fun PgTextField(
                         fontFamily = Nunito,
                         fontWeight = FontWeight.Medium,
                         fontSize = 15.sp,
-                        color = PgInkMuted,
+                        color = GgInkMuted,
                     )
                 }
                 BasicTextField(
@@ -107,7 +107,7 @@ fun PgTextField(
                         fontFamily = Nunito,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
-                        color = PgInk,
+                        color = GgInk,
                     ),
                     visualTransformation = if (isPassword && !visible) {
                         PasswordVisualTransformation()
@@ -115,7 +115,7 @@ fun PgTextField(
                         VisualTransformation.None
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-                    cursorBrush = SolidColor(PgPrimary),
+                    cursorBrush = SolidColor(GgPrimary),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -126,9 +126,9 @@ fun PgTextField(
                         onClickLabel = if (visible) "Hide password" else "Show password",
                     ) { visible = !visible },
                 ) {
-                    PgIcon(
-                        name = PgIconName.Eye,
-                        color = PgInkMuted,
+                    GgIcon(
+                        name = GgIconName.Eye,
+                        color = GgInkMuted,
                         size = 18.dp,
                         contentDescription = if (visible) "Hide password" else "Show password",
                     )
@@ -157,7 +157,7 @@ fun PillButton(
                     .height(52.dp)
                     .align(Alignment.BottomCenter)
                     .clip(shape)
-                    .background(PgPrimaryDeep),
+                    .background(GgPrimaryDeep),
             )
         }
         Box(
@@ -166,7 +166,7 @@ fun PillButton(
                 .height(52.dp)
                 .align(Alignment.TopCenter)
                 .clip(shape)
-                .background(if (primary) PgPrimary else Color.White)
+                .background(if (primary) GgPrimary else Color.White)
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
@@ -180,7 +180,7 @@ fun PillButton(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
-                color = if (primary) PgBgCream else PgInk,
+                color = if (primary) GgBgCream else GgInk,
             )
         }
     }
@@ -195,12 +195,12 @@ fun RowScope.SocialButton(label: String, mark: String) {
             .height(52.dp)
             .clip(shape)
             .background(Color.White)
-            .border(1.5.dp, PgMoss, shape),
+            .border(1.5.dp, GgMoss, shape),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(22.dp).clip(CircleShape).background(PgBgSage),
+            modifier = Modifier.size(22.dp).clip(CircleShape).background(GgBgSage),
             contentAlignment = Alignment.Center,
         ) {
             if (mark.isNotEmpty()) {
@@ -209,11 +209,11 @@ fun RowScope.SocialButton(label: String, mark: String) {
                     fontFamily = Nunito,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 13.sp,
-                    color = PgPrimaryDeep,
+                    color = GgPrimaryDeep,
                 )
             }
         }
         Spacer(Modifier.width(10.dp))
-        Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = PgInk)
+        Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = GgInk)
     }
 }

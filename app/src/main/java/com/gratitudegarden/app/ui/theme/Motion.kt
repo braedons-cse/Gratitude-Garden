@@ -15,10 +15,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * Central motion tokens so the whole app animates with one voice. Mirrors the
- * [PgInk]/[PgPrimary] colour-token convention in Color.kt — reach for these
+ * [GgInk]/[GgPrimary] colour-token convention in Color.kt — reach for these
  * instead of hand-rolling durations/springs at each call site.
  */
-object PgMotion {
+object GgMotion {
     const val FastMillis = 140
     const val MediumMillis = 260
     const val SlowMillis = 460
@@ -47,7 +47,7 @@ fun Modifier.pressScale(
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (pressed) pressedScale else 1f,
-        animationSpec = PgMotion.pop(),
+        animationSpec = GgMotion.pop(),
         label = "pressScale",
     )
     graphicsLayer { scaleX = scale; scaleY = scale }

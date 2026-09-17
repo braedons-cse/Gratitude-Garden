@@ -51,19 +51,19 @@ import com.gratitudegarden.app.ui.journal.JournalUiState
 import com.gratitudegarden.app.ui.journal.JournalViewModel
 import com.gratitudegarden.app.ui.sprites.CoinIcon
 import com.gratitudegarden.app.ui.sprites.MaturePlant
-import com.gratitudegarden.app.ui.sprites.PgIcon
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgAccent
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInk
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgAccent
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInk
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -113,7 +113,7 @@ fun JournalScreen(
     PullToRefreshBox(
         isRefreshing = ui.refreshing,
         onRefresh = onRefresh,
-        modifier = Modifier.fillMaxSize().background(PgBgSage),
+        modifier = Modifier.fillMaxSize().background(GgBgSage),
     ) {
     LazyColumn(
         state = listState,
@@ -128,7 +128,7 @@ fun JournalScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("Journal", fontFamily = Caprasimo, fontSize = 26.sp, color = PgPrimaryDeep)
+                Text("Journal", fontFamily = Caprasimo, fontSize = 26.sp, color = GgPrimaryDeep)
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
@@ -136,18 +136,18 @@ fun JournalScreen(
                         .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PgIcon(name = PgIconName.Flame, color = PgAccent, size = 16.dp)
+                    GgIcon(name = GgIconName.Flame, color = GgAccent, size = 16.dp)
                     Spacer(Modifier.size(5.dp))
-                    Text("${ui.streak}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                    Text("${ui.streak}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
                     Spacer(Modifier.size(3.dp))
-                    Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = PgInkMuted)
+                    Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
                 }
             }
 
             Spacer(Modifier.height(6.dp))
             Row {
-                Text("${ui.totalEntries}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 13.5.sp, color = PgPrimaryDeep)
-                Text(" kind thoughts planted so far.", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = PgInkSoft)
+                Text("${ui.totalEntries}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 13.5.sp, color = GgPrimaryDeep)
+                Text(" kind thoughts planted so far.", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp, color = GgInkSoft)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -167,7 +167,7 @@ fun JournalScreen(
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 11.sp,
                     letterSpacing = 1.sp,
-                    color = PgInkMuted,
+                    color = GgInkMuted,
                     modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
                 )
             }
@@ -184,7 +184,7 @@ fun JournalScreen(
                     fontFamily = Nunito,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
-                    color = PgInkMuted,
+                    color = GgInkMuted,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
@@ -250,13 +250,13 @@ private fun WeekStrip(entryDates: Set<String>) {
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
-                    color = if (isToday) PgPrimaryDeep else PgInkMuted,
+                    color = if (isToday) GgPrimaryDeep else GgInkMuted,
                 )
                 Box(
-                    modifier = Modifier.size(26.dp).clip(CircleShape).background(if (on) PgPrimary else PgBgSage),
+                    modifier = Modifier.size(26.dp).clip(CircleShape).background(if (on) GgPrimary else GgBgSage),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (on) PgIcon(name = PgIconName.Check, color = Color(0xFFFAF5E8), size = 14.dp)
+                    if (on) GgIcon(name = GgIconName.Check, color = Color(0xFFFAF5E8), size = 14.dp)
                 }
             }
         }
@@ -275,7 +275,7 @@ private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(
-            modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(PgMoss),
+            modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(GgMoss),
             contentAlignment = Alignment.Center,
         ) {
             MaturePlant(colors = PlantPalette.forSeed(entry.id), size = 40.dp)
@@ -286,7 +286,7 @@ private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.5.sp,
-                color = PgInk,
+                color = GgInk,
                 lineHeight = 20.sp,
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -295,11 +295,11 @@ private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp,
-                    color = PgInkMuted,
+                    color = GgInkMuted,
                 )
-                Box(Modifier.size(3.dp).clip(CircleShape).background(PgInkMuted))
+                Box(Modifier.size(3.dp).clip(CircleShape).background(GgInkMuted))
                 if (entry.inputMethod == "voice_to_text") {
-                    PgIcon(name = PgIconName.Mic, color = PgPrimary, size = 12.dp)
+                    GgIcon(name = GgIconName.Mic, color = GgPrimary, size = 12.dp)
                 }
                 CoinIcon(size = 12.dp)
                 Text(
@@ -307,7 +307,7 @@ private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp,
-                    color = PgPrimary,
+                    color = GgPrimary,
                 )
             }
         }
@@ -322,13 +322,13 @@ private fun EmptyJournal() {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         MaturePlant(colors = PlantPalette.Daisy, size = 56.dp)
-        Text("No thoughts yet", fontFamily = Caprasimo, fontSize = 20.sp, color = PgPrimaryDeep)
+        Text("No thoughts yet", fontFamily = Caprasimo, fontSize = 20.sp, color = GgPrimaryDeep)
         Text(
             "Head to the Garden and plant your first kind thought.",
             fontFamily = Nunito,
             fontWeight = FontWeight.Medium,
             fontSize = 13.5.sp,
-            color = PgInkSoft,
+            color = GgInkSoft,
         )
     }
 }
@@ -338,7 +338,7 @@ private fun EmptyJournal() {
 private fun ActionDialog(onEdit: () -> Unit, onDelete: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(PgBgSage).padding(8.dp),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(GgBgSage).padding(8.dp),
         ) {
             DialogRow("Edit thought", onEdit)
             DialogRow("Delete thought", onDelete, danger = true)
@@ -356,8 +356,8 @@ private fun DialogRow(label: String, onClick: () -> Unit, danger: Boolean = fals
         fontSize = 15.sp,
         color = when {
             danger -> Color(0xFFB3261E)
-            muted -> PgInkMuted
-            else -> PgInk
+            muted -> GgInkMuted
+            else -> GgInk
         },
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
     )
@@ -368,9 +368,9 @@ private fun EditDialog(initial: String, onSave: (String) -> Unit, onDismiss: () 
     var text by remember { mutableStateOf(initial) }
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(PgBgSage).padding(20.dp),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(GgBgSage).padding(20.dp),
         ) {
-            Text("Edit thought", fontFamily = Caprasimo, fontSize = 20.sp, color = PgPrimaryDeep)
+            Text("Edit thought", fontFamily = Caprasimo, fontSize = 20.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(14.dp))
             Box(
                 modifier = Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(14.dp),
@@ -378,8 +378,8 @@ private fun EditDialog(initial: String, onSave: (String) -> Unit, onDismiss: () 
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
-                    textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = PgInk),
-                    cursorBrush = SolidColor(PgPrimary),
+                    textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = GgInk),
+                    cursorBrush = SolidColor(GgPrimary),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -391,7 +391,7 @@ private fun EditDialog(initial: String, onSave: (String) -> Unit, onDismiss: () 
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.align(Alignment.CenterHorizontally).clickable(onClick = onDismiss).padding(8.dp),
             )
         }
@@ -402,17 +402,17 @@ private fun EditDialog(initial: String, onSave: (String) -> Unit, onDismiss: () 
 private fun ConfirmDeleteDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(PgBgSage).padding(20.dp),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(GgBgSage).padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Delete this thought?", fontFamily = Caprasimo, fontSize = 20.sp, color = PgPrimaryDeep)
+            Text("Delete this thought?", fontFamily = Caprasimo, fontSize = 20.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(8.dp))
             Text(
                 "This removes it from your journal for good.",
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.5.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
             )
             Spacer(Modifier.height(18.dp))
             PillButton(text = "Delete", onClick = onConfirm, modifier = Modifier.fillMaxWidth())
@@ -422,7 +422,7 @@ private fun ConfirmDeleteDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
             )
         }

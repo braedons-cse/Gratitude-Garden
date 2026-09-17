@@ -41,7 +41,7 @@ import com.gratitudegarden.app.ui.screens.MeScreen
 import com.gratitudegarden.app.ui.screens.ShopRoute
 import com.gratitudegarden.app.ui.screens.SignUpScreen
 import com.gratitudegarden.app.ui.theme.GratitudeGardenTheme
-import com.gratitudegarden.app.ui.theme.PgBgSage
+import com.gratitudegarden.app.ui.theme.GgBgSage
 import com.gratitudegarden.app.util.LogComposableLifecycle
 import com.gratitudegarden.app.util.LogTags
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -54,7 +54,7 @@ fun GratitudeGardenApp() {
         val authVm: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
         val status by authVm.sessionStatus.collectAsStateWithLifecycle()
 
-        Surface(modifier = Modifier.fillMaxSize(), color = PgBgSage) {
+        Surface(modifier = Modifier.fillMaxSize(), color = GgBgSage) {
             if (status is SessionStatus.Authenticated) {
                 // Scope the tab/admin ViewModels to this session so they're evicted on
                 // sign-out — otherwise the next user inherits this user's cached state.
@@ -124,7 +124,7 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
                     onSelect = { i -> scope.launch { pagerState.animateScrollToPage(i) } },
                 )
             },
-            containerColor = PgBgSage,
+            containerColor = GgBgSage,
         ) { inner ->
             HorizontalPager(
                 state = pagerState,
@@ -172,7 +172,7 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
             enter = slideInHorizontally(tween(320)) { it } + fadeIn(tween(200)),
             exit = slideOutHorizontally(tween(280)) { it } + fadeOut(tween(180)),
         ) {
-            Box(Modifier.fillMaxSize().background(PgBgSage).systemBarsPadding()) {
+            Box(Modifier.fillMaxSize().background(GgBgSage).systemBarsPadding()) {
                 AdminDashboardScreen(onBack = { showAdmin = false })
             }
         }

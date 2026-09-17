@@ -5,23 +5,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
-// Positivity Garden is a warm, light, illustrated experience. We use a fixed
-// light scheme built from the PG palette rather than Material dynamic color so
+// Gratitude Garden is a warm, light, illustrated experience. We use a fixed
+// light scheme built from the GG palette rather than Material dynamic color so
 // the garden greens read consistently across devices.
 private val GardenLightColors = lightColorScheme(
-    primary = PgPrimary,
-    onPrimary = PgBgCream,
-    primaryContainer = PgMoss,
-    onPrimaryContainer = PgPrimaryDeep,
-    secondary = PgAccent,
-    onSecondary = PgBgCream,
-    background = PgBgSage,
-    onBackground = PgInk,
-    surface = PgBgCream,
-    onSurface = PgInk,
-    surfaceVariant = PgMoss,
-    onSurfaceVariant = PgInkSoft,
-    outline = PgMoss,
+    primary = GgPrimary,
+    onPrimary = GgBgCream,
+    primaryContainer = GgMoss,
+    onPrimaryContainer = GgPrimaryDeep,
+    secondary = GgAccent,
+    onSecondary = GgBgCream,
+    background = GgBgSage,
+    onBackground = GgInk,
+    surface = GgBgCream,
+    onSurface = GgInk,
+    surfaceVariant = GgMoss,
+    onSurfaceVariant = GgInkSoft,
+    outline = GgMoss,
 )
 
 @Composable

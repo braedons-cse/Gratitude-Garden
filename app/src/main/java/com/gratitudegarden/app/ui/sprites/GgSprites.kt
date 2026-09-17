@@ -43,7 +43,7 @@ import kotlin.math.absoluteValue
 // ── Stroke / fill icons ──────────────────────────────────────────
 // Recreated from the design's SVG path data (24×24 viewport).
 
-enum class PgIconName { Mail, Lock, Eye, User, Mic, Flame, Home, Shop, Leaf, Cog, Check, Back }
+enum class GgIconName { Mail, Lock, Eye, User, Mic, Flame, Home, Shop, Leaf, Cog, Check, Back }
 
 private fun ImageVector.Builder.strokePath(d: String, color: Color, width: Float = 1.9f) {
     addPath(
@@ -59,28 +59,28 @@ private fun ImageVector.Builder.fillPath(d: String, color: Color) {
     addPath(pathData = PathParser().parsePathString(d).toNodes(), fill = SolidColor(color))
 }
 
-private fun buildIcon(name: PgIconName, color: Color): ImageVector {
+private fun buildIcon(name: GgIconName, color: Color): ImageVector {
     val b = ImageVector.Builder(
         defaultWidth = 24.dp, defaultHeight = 24.dp,
         viewportWidth = 24f, viewportHeight = 24f,
     )
     when (name) {
-        PgIconName.Mail -> b.strokePath("M4 6h16v12H4z M4 7l8 6 8-6", color)
-        PgIconName.Lock -> b.strokePath("M6 11h12v9H6z M9 11V8a3 3 0 0 1 6 0v3", color)
-        PgIconName.Eye -> b.strokePath("M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", color)
-        PgIconName.User -> b.strokePath("M4 20a8 8 0 0 1 16 0 M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8z", color)
-        PgIconName.Home -> b.strokePath("M4 11l8-7 8 7v9H4z", color)
-        PgIconName.Shop -> b.strokePath("M4 8h16l-1 12H5z M8 8V6a4 4 0 0 1 8 0v2", color)
-        PgIconName.Cog -> b.strokePath(
+        GgIconName.Mail -> b.strokePath("M4 6h16v12H4z M4 7l8 6 8-6", color)
+        GgIconName.Lock -> b.strokePath("M6 11h12v9H6z M9 11V8a3 3 0 0 1 6 0v3", color)
+        GgIconName.Eye -> b.strokePath("M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z", color)
+        GgIconName.User -> b.strokePath("M4 20a8 8 0 0 1 16 0 M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8z", color)
+        GgIconName.Home -> b.strokePath("M4 11l8-7 8 7v9H4z", color)
+        GgIconName.Shop -> b.strokePath("M4 8h16l-1 12H5z M8 8V6a4 4 0 0 1 8 0v2", color)
+        GgIconName.Cog -> b.strokePath(
             "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 3v2 M12 19v2 M5 12H3 M21 12h-2 " +
                 "M6 6l1.5 1.5 M16.5 16.5L18 18 M6 18l1.5-1.5 M16.5 7.5L18 6",
             color,
         )
-        PgIconName.Check -> b.strokePath("M5 12l4 4 10-10", color, width = 2.6f)
-        PgIconName.Back -> b.strokePath("M15 6l-6 6 6 6", color)
-        PgIconName.Leaf -> b.fillPath("M4 20 C4 10 12 4 20 4 C20 12 14 20 4 20 Z", color)
-        PgIconName.Flame -> b.fillPath("M12 2 C12 2 7 7 7 12 a5 5 0 0 0 10 0 C17 9 14 7 12 2 Z", color)
-        PgIconName.Mic -> {
+        GgIconName.Check -> b.strokePath("M5 12l4 4 10-10", color, width = 2.6f)
+        GgIconName.Back -> b.strokePath("M15 6l-6 6 6 6", color)
+        GgIconName.Leaf -> b.fillPath("M4 20 C4 10 12 4 20 4 C20 12 14 20 4 20 Z", color)
+        GgIconName.Flame -> b.fillPath("M12 2 C12 2 7 7 7 12 a5 5 0 0 0 10 0 C17 9 14 7 12 2 Z", color)
+        GgIconName.Mic -> {
             b.fillPath("M9 6 a3 3 0 0 1 6 0 v6 a3 3 0 0 1 -6 0 z", color)
             b.strokePath("M6 12a6 6 0 0 0 12 0 M12 18v3", color)
         }
@@ -94,7 +94,7 @@ private fun buildIcon(name: PgIconName, color: Color): ImageVector {
  * interactive control (e.g. an icon-only button), so screen readers announce it.
  */
 @Composable
-fun PgIcon(name: PgIconName, color: Color, size: Dp, contentDescription: String? = null) {
+fun GgIcon(name: GgIconName, color: Color, size: Dp, contentDescription: String? = null) {
     val vector = remember(name, color) { buildIcon(name, color) }
     Image(imageVector = vector, contentDescription = contentDescription, modifier = Modifier.size(size))
 }

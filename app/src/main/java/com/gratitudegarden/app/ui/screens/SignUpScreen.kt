@@ -36,20 +36,20 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gratitudegarden.app.ui.components.PgTextField
+import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
-import com.gratitudegarden.app.ui.sprites.PgIcon
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.Plant
 import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgBgCream
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgBgCream
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import com.gratitudegarden.app.util.passwordProblem
 
 private val ErrorRed = Color(0xFFB3261E)
@@ -73,7 +73,7 @@ fun SignUpScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PgBgSage)
+            .background(GgBgSage)
             .verticalScroll(rememberScrollState())
             .padding(start = 28.dp, end = 28.dp, top = 12.dp, bottom = 28.dp),
     ) {
@@ -86,9 +86,9 @@ fun SignUpScreen(
                 .clickable(onClickLabel = "Back to login", onClick = onBackToLogin),
             contentAlignment = Alignment.Center,
         ) {
-            PgIcon(
-                name = PgIconName.Back,
-                color = com.gratitudegarden.app.ui.theme.PgInk,
+            GgIcon(
+                name = GgIconName.Back,
+                color = com.gratitudegarden.app.ui.theme.GgInk,
                 size = 18.dp,
                 contentDescription = "Back to login",
             )
@@ -99,7 +99,7 @@ fun SignUpScreen(
         // Header
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
-                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(PgMoss),
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(GgMoss),
                 contentAlignment = Alignment.Center,
             ) {
                 Plant(colors = PlantPalette.Tulip, stage = 1, size = 42.dp)
@@ -109,7 +109,7 @@ fun SignUpScreen(
                     text = "Plant a seed",
                     fontFamily = Caprasimo,
                     fontSize = 28.sp,
-                    color = PgPrimaryDeep,
+                    color = GgPrimaryDeep,
                     letterSpacing = (-0.4).sp,
                 )
                 Spacer(Modifier.height(4.dp))
@@ -118,36 +118,36 @@ fun SignUpScreen(
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.5.sp,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                 )
             }
         }
 
         Spacer(Modifier.height(22.dp))
 
-        PgTextField(
+        GgTextField(
             value = name,
             onValueChange = { name = it },
             placeholder = "Rosa",
             label = "What should we call you?",
-            icon = PgIconName.User,
+            icon = GgIconName.User,
         )
         Spacer(Modifier.height(12.dp))
-        PgTextField(
+        GgTextField(
             value = email,
             onValueChange = { email = it },
             placeholder = "you@garden.app",
             label = "Email",
-            icon = PgIconName.Mail,
+            icon = GgIconName.Mail,
             keyboardType = KeyboardType.Email,
         )
         Spacer(Modifier.height(12.dp))
-        PgTextField(
+        GgTextField(
             value = password,
             onValueChange = { password = it },
             placeholder = "Create a password",
             label = "Password",
-            icon = PgIconName.Lock,
+            icon = GgIconName.Lock,
             isPassword = true,
             imeAction = ImeAction.Done,
         )
@@ -162,7 +162,7 @@ fun SignUpScreen(
             } else {
                 "Needs $passwordProblem."
             },
-            color = if (password.isEmpty() || passwordProblem == null) PgInkSoft else ErrorRed,
+            color = if (password.isEmpty() || passwordProblem == null) GgInkSoft else ErrorRed,
             fontFamily = Nunito,
             fontSize = 12.5.sp,
             lineHeight = 18.sp,
@@ -184,18 +184,18 @@ fun SignUpScreen(
                     .padding(top = 1.dp)
                     .size(20.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(if (consent) PgPrimary else Color.White)
+                    .background(if (consent) GgPrimary else Color.White)
                     .semantics { contentDescription = "Accept the terms and privacy policy" }
                     .toggleable(value = consent, role = Role.Checkbox) { consent = it },
                 contentAlignment = Alignment.Center,
             ) {
-                if (consent) PgIcon(name = PgIconName.Check, color = PgBgCream, size = 14.dp)
+                if (consent) GgIcon(name = GgIconName.Check, color = GgBgCream, size = 14.dp)
             }
             Text(
                 text = "I'm cool with the terms and privacy policy.",
                 fontFamily = Nunito,
                 fontSize = 12.5.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
                 lineHeight = 18.sp,
             )
         }
@@ -227,13 +227,13 @@ fun SignUpScreen(
         Spacer(Modifier.height(14.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            Text(text = "Already growing? ", fontFamily = Nunito, fontSize = 14.sp, color = PgInkSoft)
+            Text(text = "Already growing? ", fontFamily = Nunito, fontSize = 14.sp, color = GgInkSoft)
             Text(
                 text = "Log in",
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = PgPrimary,
+                color = GgPrimary,
                 modifier = Modifier.clickable(onClick = onBackToLogin),
             )
         }

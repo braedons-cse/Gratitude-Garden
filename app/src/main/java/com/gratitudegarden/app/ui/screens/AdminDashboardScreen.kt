@@ -55,14 +55,14 @@ import com.gratitudegarden.app.ui.admin.AdminViewModel
 import com.gratitudegarden.app.ui.components.PillButton
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgAccent
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInk
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgAccent
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInk
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 
@@ -81,7 +81,7 @@ fun AdminDashboardScreen(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PgBgSage)
+            .background(GgBgSage)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -93,11 +93,11 @@ fun AdminDashboardScreen(onBack: () -> Unit) {
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = PgPrimaryDeep,
+                color = GgPrimaryDeep,
                 modifier = Modifier.clickable(onClick = onBack),
             )
             Spacer(Modifier.width(14.dp))
-            Text(text = "Admin Dashboard", fontFamily = Caprasimo, fontSize = 24.sp, color = PgPrimaryDeep)
+            Text(text = "Admin Dashboard", fontFamily = Caprasimo, fontSize = 24.sp, color = GgPrimaryDeep)
         }
 
         // Mode tabs
@@ -110,7 +110,7 @@ fun AdminDashboardScreen(onBack: () -> Unit) {
         ui.message?.let { Banner(it, error = false) }
 
         when {
-            ui.loading -> Text("Loading…", fontFamily = Nunito, color = PgInkSoft)
+            ui.loading -> Text("Loading…", fontFamily = Nunito, color = GgInkSoft)
 
             ui.mode == AdminMode.CATALOG -> {
                 TableSection(
@@ -126,7 +126,7 @@ fun AdminDashboardScreen(onBack: () -> Unit) {
             }
 
             else -> {
-                Text("Select a user", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PgInkSoft)
+                Text("Select a user", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GgInkSoft)
                 ui.users.forEach { user ->
                     UserRow(user = user, selected = user.id == ui.selectedUserId) { vm.selectUser(user.id) }
                 }
@@ -186,17 +186,17 @@ private fun TableSection(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(text = spec.title, fontFamily = Caprasimo, fontSize = 18.sp, color = PgInk)
+            Text(text = spec.title, fontFamily = Caprasimo, fontSize = 18.sp, color = GgInk)
             Spacer(Modifier.width(8.dp))
-            Text(text = "(${rows.size})", fontFamily = Nunito, fontSize = 13.sp, color = PgInkMuted)
+            Text(text = "(${rows.size})", fontFamily = Nunito, fontSize = 13.sp, color = GgInkMuted)
         }
-        hint?.let { Text(it, fontFamily = Nunito, fontSize = 12.sp, color = PgInkMuted) }
+        hint?.let { Text(it, fontFamily = Nunito, fontSize = 12.sp, color = GgInkMuted) }
 
         if (spec.single) {
             val row = rows.firstOrNull()
             if (row == null) {
                 if (canCreate) {
-                    Text("No row yet.", fontFamily = Nunito, fontSize = 12.sp, color = PgInkMuted)
+                    Text("No row yet.", fontFamily = Nunito, fontSize = 12.sp, color = GgInkMuted)
                     RowEditor(spec, defaults(spec), isCreate = true, itemOptions, busy, onSubmit = onCreate, onDelete = null)
                 }
             } else {
@@ -214,10 +214,10 @@ private fun TableSection(
                 if (adding) {
                     RowEditor(spec, defaults(spec), isCreate = true, itemOptions, busy,
                         onSubmit = { adding = false; onCreate(it) }, onDelete = null)
-                    TextButton(onClick = { adding = false }) { Text("Cancel", color = PgInkMuted) }
+                    TextButton(onClick = { adding = false }) { Text("Cancel", color = GgInkMuted) }
                 } else {
                     TextButton(onClick = { adding = true }) {
-                        Text("+ Add ${spec.title}", color = PgPrimaryDeep, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+                        Text("+ Add ${spec.title}", color = GgPrimaryDeep, fontFamily = Nunito, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -246,7 +246,7 @@ private fun RowEditor(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, PgMoss, RoundedCornerShape(12.dp))
+            .border(1.dp, GgMoss, RoundedCornerShape(12.dp))
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -262,7 +262,7 @@ private fun RowEditor(
             )
             if (onDelete != null) {
                 OutlinedButton(onClick = { confirmDelete = true }, enabled = !busy) {
-                    Text("Delete", color = PgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+                    Text("Delete", color = GgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -275,7 +275,7 @@ private fun RowEditor(
             text = { Text("This permanently removes the row from Supabase.") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; onDelete?.invoke() }) {
-                    Text("Delete", color = PgAccent)
+                    Text("Delete", color = GgAccent)
                 }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
@@ -295,7 +295,7 @@ private fun FieldInput(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(field.label, fontFamily = Nunito, fontSize = 14.sp, color = PgInk, modifier = Modifier.weight(1f))
+            Text(field.label, fontFamily = Nunito, fontSize = 14.sp, color = GgInk, modifier = Modifier.weight(1f))
             Switch(checked = value == "true", onCheckedChange = { onChange(it.toString()) })
         }
 
@@ -336,20 +336,20 @@ private fun PickerField(
     var expanded by remember { mutableStateOf(false) }
     val display = options.firstOrNull { it.first == value }?.second ?: value.ifBlank { "—" }
     Column {
-        Text(label, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = PgInkSoft)
+        Text(label, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GgInkSoft)
         Box {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .border(1.dp, PgMoss, RoundedCornerShape(10.dp))
+                    .border(1.dp, GgMoss, RoundedCornerShape(10.dp))
                     .clickable { expanded = true }
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(display, fontFamily = Nunito, fontSize = 14.sp, color = PgInk, modifier = Modifier.weight(1f))
-                Text("▾", color = PgInkMuted)
+                Text(display, fontFamily = Nunito, fontSize = 14.sp, color = GgInk, modifier = Modifier.weight(1f))
+                Text("▾", color = GgInkMuted)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 if (allowEmpty) {
@@ -370,7 +370,7 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
-            .background(if (selected) PgPrimary else Color.White)
+            .background(if (selected) GgPrimary else Color.White)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 9.dp),
     ) {
@@ -379,7 +379,7 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
             fontFamily = Nunito,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
-            color = if (selected) Color.White else PgInk,
+            color = if (selected) Color.White else GgInk,
         )
     }
 }
@@ -390,26 +390,26 @@ private fun UserRow(user: AdminUser, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) PgPrimary.copy(alpha = 0.16f) else Color.White)
-            .border(if (selected) 1.5.dp else 1.dp, if (selected) PgPrimary else PgMoss, RoundedCornerShape(12.dp))
+            .background(if (selected) GgPrimary.copy(alpha = 0.16f) else Color.White)
+            .border(if (selected) 1.5.dp else 1.dp, if (selected) GgPrimary else GgMoss, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(user.displayName, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = PgInk)
+            Text(user.displayName, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GgInk)
             Text(
                 text = user.id.take(8) + "…",
                 fontFamily = Nunito,
                 fontSize = 11.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
             )
         }
         if (user.isAdmin) {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(percent = 50))
-                    .background(PgPrimaryDeep)
+                    .background(GgPrimaryDeep)
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {
                 Text("ADMIN", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, color = Color.White)
@@ -426,25 +426,25 @@ private fun DeleteAccountCard(user: AdminUser, busy: Boolean, onConfirm: () -> U
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(PgAccent.copy(alpha = 0.10f))
+            .background(GgAccent.copy(alpha = 0.10f))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(text = "Danger zone", fontFamily = Caprasimo, fontSize = 18.sp, color = PgAccent)
+        Text(text = "Danger zone", fontFamily = Caprasimo, fontSize = 18.sp, color = GgAccent)
         Text(
             text = "Permanently delete ${user.displayName}'s account. The login and every row " +
                 "above (profile, settings, stats, wallet, entries, garden, inventory) are wiped " +
                 "via cascade. This can't be undone.",
             fontFamily = Nunito,
             fontSize = 12.sp,
-            color = PgInkSoft,
+            color = GgInkSoft,
         )
         OutlinedButton(
             onClick = { confirm = true },
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Delete entire account", color = PgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+            Text("Delete entire account", color = GgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
         }
     }
 
@@ -455,7 +455,7 @@ private fun DeleteAccountCard(user: AdminUser, busy: Boolean, onConfirm: () -> U
             text = { Text("This removes the auth login and cascades to every owned row. This can't be undone.") },
             confirmButton = {
                 TextButton(onClick = { confirm = false; onConfirm() }) {
-                    Text("Delete account", color = PgAccent)
+                    Text("Delete account", color = GgAccent)
                 }
             },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
@@ -469,10 +469,10 @@ private fun Banner(text: String, error: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(if (error) PgAccent.copy(alpha = 0.15f) else PgPrimary.copy(alpha = 0.15f))
+            .background(if (error) GgAccent.copy(alpha = 0.15f) else GgPrimary.copy(alpha = 0.15f))
             .padding(12.dp),
     ) {
-        Text(text, fontFamily = Nunito, fontSize = 13.sp, color = if (error) PgAccent else PgPrimaryDeep)
+        Text(text, fontFamily = Nunito, fontSize = 13.sp, color = if (error) GgAccent else GgPrimaryDeep)
     }
 }
 

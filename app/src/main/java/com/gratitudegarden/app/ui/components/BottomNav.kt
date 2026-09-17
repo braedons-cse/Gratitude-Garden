@@ -22,19 +22,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.gratitudegarden.app.ui.sprites.PgIcon
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgPrimary
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgPrimary
 
-data class NavItem(val route: String, val icon: PgIconName, val label: String)
+data class NavItem(val route: String, val icon: GgIconName, val label: String)
 
 val HomeNavItems = listOf(
-    NavItem("garden", PgIconName.Home, "Garden"),
-    NavItem("shop", PgIconName.Shop, "Shop"),
-    NavItem("journal", PgIconName.Leaf, "Journal"),
-    NavItem("me", PgIconName.Cog, "Me"),
+    NavItem("garden", GgIconName.Home, "Garden"),
+    NavItem("shop", GgIconName.Shop, "Shop"),
+    NavItem("journal", GgIconName.Leaf, "Journal"),
+    NavItem("me", GgIconName.Cog, "Me"),
 )
 
 /**
@@ -60,7 +60,7 @@ fun BottomNav(
     ) {
         items.forEachIndexed { index, item ->
             val isSelected = index == selectedIndex
-            val tint = if (isSelected) PgPrimary else PgInkMuted
+            val tint = if (isSelected) GgPrimary else GgInkMuted
             val interaction = remember { MutableInteractionSource() }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -76,7 +76,7 @@ fun BottomNav(
                         onClickLabel = item.label,
                     ) { onSelect(index) },
             ) {
-                PgIcon(name = item.icon, color = tint, size = 22.dp)
+                GgIcon(name = item.icon, color = tint, size = 22.dp)
                 Text(
                     text = item.label,
                     fontFamily = Nunito,

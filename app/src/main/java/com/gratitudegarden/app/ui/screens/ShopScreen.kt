@@ -45,14 +45,14 @@ import com.gratitudegarden.app.ui.sprites.Plant
 import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgBgCream
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInk
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgBgCream
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInk
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 
 private enum class Tab(val label: String) { Seeds("Seeds"), Decor("Decor"), Backdrops("Backdrops") }
 
@@ -92,7 +92,7 @@ fun ShopScreen(
     PullToRefreshBox(
         isRefreshing = ui.refreshing,
         onRefresh = onRefresh,
-        modifier = Modifier.fillMaxSize().background(PgBgSage),
+        modifier = Modifier.fillMaxSize().background(GgBgSage),
     ) {
     Column(
         modifier = Modifier
@@ -106,7 +106,7 @@ fun ShopScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Garden Shop", fontFamily = Caprasimo, fontSize = 26.sp, color = PgPrimaryDeep)
+            Text("Garden Shop", fontFamily = Caprasimo, fontSize = 26.sp, color = GgPrimaryDeep)
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
@@ -116,7 +116,7 @@ fun ShopScreen(
             ) {
                 CoinIcon(size = 16.dp)
                 Spacer(Modifier.size(5.dp))
-                Text("${ui.coins}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                Text("${ui.coins}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
             }
         }
 
@@ -145,10 +145,10 @@ private fun TabPill(label: String, selected: Boolean, onClick: () -> Unit) {
         fontFamily = Nunito,
         fontWeight = FontWeight.Bold,
         fontSize = 13.sp,
-        color = if (selected) PgBgCream else PgInkSoft,
+        color = if (selected) GgBgCream else GgInkSoft,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(if (selected) PgPrimary else Color.White)
+            .background(if (selected) GgPrimary else Color.White)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     )
@@ -200,7 +200,7 @@ private fun SeedCard(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
-            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)).background(PgMoss),
+            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(16.dp)).background(GgMoss),
             contentAlignment = Alignment.Center,
         ) {
             Plant(
@@ -209,7 +209,7 @@ private fun SeedCard(
                 modifier = Modifier.fillMaxSize().padding(12.dp),
             )
         }
-        Text(item.name, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PgInk)
+        Text(item.name, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GgInk)
         Text(
             item.rarity.replaceFirstChar { it.uppercase() },
             fontFamily = Nunito,
@@ -235,18 +235,18 @@ private fun ShopButton(text: String, filled: Boolean, enabled: Boolean, onClick:
         fontSize = 13.sp,
         textAlign = TextAlign.Center,
         color = when {
-            !enabled && !filled -> PgInkMuted
-            filled -> PgBgCream
-            else -> PgPrimaryDeep
+            !enabled && !filled -> GgInkMuted
+            filled -> GgBgCream
+            else -> GgPrimaryDeep
         },
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(999.dp))
             .background(
                 when {
-                    filled && enabled -> PgPrimary
-                    filled -> PgMoss
-                    else -> PgBgSage
+                    filled && enabled -> GgPrimary
+                    filled -> GgMoss
+                    else -> GgBgSage
                 }
             )
             .clickable(enabled = enabled, onClick = onClick)
@@ -258,13 +258,13 @@ private fun ShopButton(text: String, filled: Boolean, enabled: Boolean, onClick:
 private fun ComingSoon(what: String) {
     Box(modifier = Modifier.fillMaxWidth().padding(top = 60.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("$what coming soon", fontFamily = Caprasimo, fontSize = 20.sp, color = PgPrimaryDeep)
+            Text("$what coming soon", fontFamily = Caprasimo, fontSize = 20.sp, color = GgPrimaryDeep)
             Text(
                 "For now, spend coins on seeds and grow your garden.",
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.5.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
                 textAlign = TextAlign.Center,
             )
         }
@@ -276,5 +276,5 @@ private fun rarityColor(rarity: String): Color = when (rarity.lowercase()) {
     "rare" -> Color(0xFF3D86B5)
     "epic" -> Color(0xFF9B7BC9)
     "legendary" -> Color(0xFFD88040)
-    else -> PgInkMuted
+    else -> GgInkMuted
 }

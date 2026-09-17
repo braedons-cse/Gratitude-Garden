@@ -63,27 +63,27 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.gratitudegarden.app.ui.components.PgTextField
+import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
 import com.gratitudegarden.app.ui.me.MeViewModel
 import com.gratitudegarden.app.util.findActivity
 import com.gratitudegarden.app.util.formatTime
 import com.gratitudegarden.app.ui.sprites.CoinIcon
 import com.gratitudegarden.app.ui.sprites.MaturePlant
-import com.gratitudegarden.app.ui.sprites.PgIcon
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgAccent
-import com.gratitudegarden.app.ui.theme.PgBgCream
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInk
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgAccent
+import com.gratitudegarden.app.ui.theme.GgBgCream
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInk
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 
 @Composable
 fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
@@ -188,17 +188,17 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(PgBgSage)
+            .background(GgBgSage)
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
     ) {
-        Text(text = "Me", fontFamily = Caprasimo, fontSize = 28.sp, color = PgPrimaryDeep)
+        Text(text = "Me", fontFamily = Caprasimo, fontSize = 28.sp, color = GgPrimaryDeep)
         Spacer(Modifier.height(16.dp))
 
         // Profile row — name/garden info sits at the very top of the page.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(
-                modifier = Modifier.size(64.dp).clip(CircleShape).background(PgMoss),
+                modifier = Modifier.size(64.dp).clip(CircleShape).background(GgMoss),
                 contentAlignment = Alignment.Center,
             ) {
                 MaturePlant(colors = PlantPalette.Rose, size = 48.dp)
@@ -208,14 +208,14 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                     text = ui.name.ifBlank { "Gardener" },
                     fontFamily = Caprasimo,
                     fontSize = 22.sp,
-                    color = PgInk,
+                    color = GgInk,
                 )
                 Text(
                     text = "Level ${ui.level} gardener",
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                 )
             }
         }
@@ -228,10 +228,10 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatCard(modifier = Modifier.weight(1f), value = "${ui.streak}", label = "Day streak") {
-                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 22.dp)
+                GgIcon(name = GgIconName.Flame, color = GgAccent, size = 22.dp)
             }
             StatCard(modifier = Modifier.weight(1f), value = "${ui.totalEntries}", label = "Thoughts") {
-                PgIcon(name = PgIconName.Mic, color = PgPrimaryDeep, size = 20.dp)
+                GgIcon(name = GgIconName.Mic, color = GgPrimaryDeep, size = 20.dp)
             }
             StatCard(modifier = Modifier.weight(1f), value = "${ui.coins}", label = "Coins") {
                 CoinIcon(size = 22.dp)
@@ -287,7 +287,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             fontFamily = Nunito,
             fontWeight = FontWeight.Bold,
             fontSize = 14.sp,
-            color = PgAccent,
+            color = GgAccent,
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .fillMaxWidth()
@@ -302,23 +302,23 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     if (deleteStep == 1) {
         AlertDialog(
             onDismissRequest = { cancelDelete() },
-            title = { Text("Delete your account?", fontFamily = Caprasimo, color = PgInk) },
+            title = { Text("Delete your account?", fontFamily = Caprasimo, color = GgInk) },
             text = {
                 Text(
                     "This permanently deletes your account and erases everything — your garden, " +
                         "journal entries, coins, and stats. This can't be undone.",
                     fontFamily = Nunito,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                 )
             },
             confirmButton = {
                 TextButton(onClick = { vm.clearDeleteError(); deleteStep = 2 }) {
-                    Text("Continue", color = PgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+                    Text("Continue", color = GgAccent, fontFamily = Nunito, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { cancelDelete() }) {
-                    Text("Cancel", color = PgInkSoft, fontFamily = Nunito)
+                    Text("Cancel", color = GgInkSoft, fontFamily = Nunito)
                 }
             },
         )
@@ -328,19 +328,19 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     if (deleteStep == 2) {
         AlertDialog(
             onDismissRequest = { if (!ui.deleting) cancelDelete() },
-            title = { Text("Confirm deletion", fontFamily = Caprasimo, color = PgInk) },
+            title = { Text("Confirm deletion", fontFamily = Caprasimo, color = GgInk) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         "Enter your password to permanently delete this account. There's no going back.",
                         fontFamily = Nunito,
-                        color = PgInkSoft,
+                        color = GgInkSoft,
                     )
-                    PgTextField(
+                    GgTextField(
                         value = password,
                         onValueChange = { password = it; vm.clearDeleteError() },
                         placeholder = "Password",
-                        icon = PgIconName.Lock,
+                        icon = GgIconName.Lock,
                         isPassword = true,
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
@@ -351,7 +351,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                             fontFamily = Nunito,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
-                            color = PgAccent,
+                            color = GgAccent,
                         )
                     }
                 }
@@ -361,7 +361,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                 TextButton(onClick = { vm.deleteAccount(password) }, enabled = canDelete) {
                     Text(
                         text = if (ui.deleting) "Deleting…" else "Delete forever",
-                        color = if (canDelete) PgAccent else PgInkMuted,
+                        color = if (canDelete) GgAccent else GgInkMuted,
                         fontFamily = Nunito,
                         fontWeight = FontWeight.Bold,
                     )
@@ -369,7 +369,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             },
             dismissButton = {
                 TextButton(onClick = { cancelDelete() }, enabled = !ui.deleting) {
-                    Text("Cancel", color = PgInkSoft, fontFamily = Nunito)
+                    Text("Cancel", color = GgInkSoft, fontFamily = Nunito)
                 }
             },
         )
@@ -408,10 +408,10 @@ private fun NotificationSettingsCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier.size(38.dp).clip(CircleShape).background(PgMoss),
+                modifier = Modifier.size(38.dp).clip(CircleShape).background(GgMoss),
                 contentAlignment = Alignment.Center,
             ) {
-                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 20.dp)
+                GgIcon(name = GgIconName.Flame, color = GgAccent, size = 20.dp)
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -420,14 +420,14 @@ private fun NotificationSettingsCard(
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = PgInk,
+                    color = GgInk,
                 )
                 Text(
                     "A nudge to keep your gratitude streak",
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Medium,
                     fontSize = 12.5.sp,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                 )
             }
             Switch(
@@ -435,15 +435,15 @@ private fun NotificationSettingsCard(
                 onCheckedChange = onToggle,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
-                    checkedTrackColor = PgPrimary,
+                    checkedTrackColor = GgPrimary,
                     uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = PgInkMuted,
+                    uncheckedTrackColor = GgInkMuted,
                 ),
             )
         }
 
         // Time-of-day row — tappable when reminders are enabled.
-        val timeColor = if (enabled) PgPrimaryDeep else PgInkMuted
+        val timeColor = if (enabled) GgPrimaryDeep else GgInkMuted
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -457,7 +457,7 @@ private fun NotificationSettingsCard(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
-                color = if (enabled) PgInk else PgInkMuted,
+                color = if (enabled) GgInk else GgInkMuted,
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -476,7 +476,7 @@ private fun NotificationSettingsCard(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.5.sp,
-                color = PgAccent,
+                color = GgAccent,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
@@ -494,7 +494,7 @@ private fun NotificationSettingsCard(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.5.sp,
-                color = PgPrimaryDeep,
+                color = GgPrimaryDeep,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
@@ -520,7 +520,7 @@ private fun MicrophoneCard(
             .padding(16.dp),
     ) {
         PermissionRow(
-            icon = PgIconName.Mic,
+            icon = GgIconName.Mic,
             title = "Microphone",
             subtitle = "Speak your gratitude entries",
             granted = micGranted,
@@ -532,7 +532,7 @@ private fun MicrophoneCard(
 
 @Composable
 private fun PermissionRow(
-    icon: PgIconName,
+    icon: GgIconName,
     title: String,
     subtitle: String,
     granted: Boolean,
@@ -541,15 +541,15 @@ private fun PermissionRow(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
-            modifier = Modifier.size(38.dp).clip(CircleShape).background(PgMoss),
+            modifier = Modifier.size(38.dp).clip(CircleShape).background(GgMoss),
             contentAlignment = Alignment.Center,
         ) {
-            PgIcon(name = icon, color = if (granted) PgPrimaryDeep else PgInkMuted, size = 20.dp)
+            GgIcon(name = icon, color = if (granted) GgPrimaryDeep else GgInkMuted, size = 20.dp)
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = PgInk)
-            Text(subtitle, fontFamily = Nunito, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = PgInkSoft)
+            Text(title, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GgInk)
+            Text(subtitle, fontFamily = Nunito, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GgInkSoft)
         }
         Spacer(Modifier.width(8.dp))
         if (granted) {
@@ -557,14 +557,14 @@ private fun PermissionRow(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
-                    .background(PgMoss)
+                    .background(GgMoss)
                     .clickable(onClick = onManage)
                     .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(7.dp).clip(CircleShape).background(PgPrimary))
+                Box(Modifier.size(7.dp).clip(CircleShape).background(GgPrimary))
                 Spacer(Modifier.width(6.dp))
-                Text("Allowed", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = PgPrimaryDeep)
+                Text("Allowed", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = GgPrimaryDeep)
             }
         } else {
             Text(
@@ -572,10 +572,10 @@ private fun PermissionRow(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.5.sp,
-                color = PgBgCream,
+                color = GgBgCream,
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
-                    .background(PgPrimary)
+                    .background(GgPrimary)
                     .clickable(onClick = onEnable)
                     .padding(horizontal = 14.dp, vertical = 7.dp),
             )
@@ -602,7 +602,7 @@ private fun ReminderTimePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set reminder time", fontFamily = Caprasimo, color = PgInk) },
+        title = { Text("Set reminder time", fontFamily = Caprasimo, color = GgInk) },
         text = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -620,7 +620,7 @@ private fun ReminderTimePickerDialog(
                     fontFamily = Nunito,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 24.sp,
-                    color = PgInkMuted,
+                    color = GgInkMuted,
                 )
                 WheelColumn(
                     items = minutes,
@@ -646,12 +646,12 @@ private fun ReminderTimePickerDialog(
                 }
                 onConfirm(hour24, minuteIndex)
             }) {
-                Text("Set", color = PgPrimaryDeep, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+                Text("Set", color = GgPrimaryDeep, fontFamily = Nunito, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = PgInkSoft, fontFamily = Nunito)
+                Text("Cancel", color = GgInkSoft, fontFamily = Nunito)
             }
         },
     )
@@ -706,7 +706,7 @@ private fun WheelColumn(
                 .fillMaxWidth()
                 .height(WheelItemHeight)
                 .clip(RoundedCornerShape(12.dp))
-                .background(PgMoss),
+                .background(GgMoss),
         )
         LazyColumn(
             state = state,
@@ -728,7 +728,7 @@ private fun WheelColumn(
                         fontFamily = Nunito,
                         fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
                         fontSize = if (isSelected) 22.sp else 18.sp,
-                        color = if (isSelected) PgPrimaryDeep else PgInkMuted,
+                        color = if (isSelected) GgPrimaryDeep else GgInkMuted,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -753,7 +753,7 @@ private fun StatCard(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         icon()
-        Text(text = value, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = PgInk)
-        Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = PgInkMuted)
+        Text(text = value, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GgInk)
+        Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
     }
 }

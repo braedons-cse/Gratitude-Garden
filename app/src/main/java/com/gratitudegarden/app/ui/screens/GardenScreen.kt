@@ -95,23 +95,23 @@ import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.ui.garden.GardenUiState
 import com.gratitudegarden.app.ui.garden.GardenViewModel
 import com.gratitudegarden.app.ui.sprites.CoinIcon
-import com.gratitudegarden.app.ui.sprites.PgIcon
-import com.gratitudegarden.app.ui.sprites.PgIconName
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.Plant
 import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.sprites.growthStageToSprite
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
-import com.gratitudegarden.app.ui.theme.PgAccent
-import com.gratitudegarden.app.ui.theme.PgAccentDeep
-import com.gratitudegarden.app.ui.theme.PgBgCream
-import com.gratitudegarden.app.ui.theme.PgBgSage
-import com.gratitudegarden.app.ui.theme.PgInk
-import com.gratitudegarden.app.ui.theme.PgInkMuted
-import com.gratitudegarden.app.ui.theme.PgInkSoft
-import com.gratitudegarden.app.ui.theme.PgMoss
-import com.gratitudegarden.app.ui.theme.PgPrimary
-import com.gratitudegarden.app.ui.theme.PgPrimaryDeep
+import com.gratitudegarden.app.ui.theme.GgAccent
+import com.gratitudegarden.app.ui.theme.GgAccentDeep
+import com.gratitudegarden.app.ui.theme.GgBgCream
+import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgInk
+import com.gratitudegarden.app.ui.theme.GgInkMuted
+import com.gratitudegarden.app.ui.theme.GgInkSoft
+import com.gratitudegarden.app.ui.theme.GgMoss
+import com.gratitudegarden.app.ui.theme.GgPrimary
+import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import com.gratitudegarden.app.ui.theme.pressScale
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -186,7 +186,7 @@ fun GardenScreen(
     )
 
     Column(
-        modifier = Modifier.fillMaxSize().background(PgBgSage).padding(horizontal = 18.dp),
+        modifier = Modifier.fillMaxSize().background(GgBgSage).padding(horizontal = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(12.dp))
@@ -198,23 +198,23 @@ fun GardenScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Chip {
-                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 16.dp)
+                GgIcon(name = GgIconName.Flame, color = GgAccent, size = 16.dp)
                 Spacer(Modifier.size(5.dp))
-                Text("$animatedStreak", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                Text("$animatedStreak", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
                 Spacer(Modifier.size(3.dp))
-                Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = PgInkMuted)
+                Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
             }
             Text(
                 text = title,
                 fontFamily = Caprasimo,
                 fontSize = 21.sp,
-                color = PgPrimaryDeep,
+                color = GgPrimaryDeep,
                 letterSpacing = (-0.3).sp,
             )
             Chip {
                 CoinIcon(size = 16.dp)
                 Spacer(Modifier.size(5.dp))
-                Text("$animatedCoins", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = PgInk)
+                Text("$animatedCoins", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
             }
         }
 
@@ -229,14 +229,14 @@ fun GardenScreen(
                     .padding(horizontal = 12.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(6.dp).clip(CircleShape).background(PgAccent))
+                Box(Modifier.size(6.dp).clip(CircleShape).background(GgAccent))
                 Spacer(Modifier.size(6.dp))
                 Text(
                     text = "${ui.thoughtsLeft} thoughts left today",
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.5.sp,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                 )
             }
         }
@@ -278,7 +278,7 @@ fun GardenScreen(
                     modifier = Modifier
                         .size(10.dp)
                         .clip(CircleShape)
-                        .background(if (filled) PgPrimary else Color.Black.copy(alpha = 0.08f)),
+                        .background(if (filled) GgPrimary else Color.Black.copy(alpha = 0.08f)),
                 )
             }
         }
@@ -295,7 +295,7 @@ fun GardenScreen(
             fontFamily = Nunito,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.5.sp,
-            color = PgInkSoft,
+            color = GgInkSoft,
         )
         Spacer(Modifier.height(18.dp))
     }
@@ -363,22 +363,22 @@ private fun NotifPromptDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(PgBgSage)
+                .background(GgBgSage)
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                modifier = Modifier.size(72.dp).clip(CircleShape).background(PgMoss),
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(GgMoss),
                 contentAlignment = Alignment.Center,
             ) {
-                PgIcon(name = PgIconName.Flame, color = PgAccent, size = 34.dp)
+                GgIcon(name = GgIconName.Flame, color = GgAccent, size = 34.dp)
             }
             Spacer(Modifier.height(14.dp))
             Text(
                 "Keep your streak alive 🌱",
                 fontFamily = Caprasimo,
                 fontSize = 22.sp,
-                color = PgPrimaryDeep,
+                color = GgPrimaryDeep,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(10.dp))
@@ -389,7 +389,7 @@ private fun NotifPromptDialog(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.5.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
@@ -404,7 +404,7 @@ private fun NotifPromptDialog(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.clickable(onClick = onDecline).padding(8.dp),
             )
         }
@@ -470,7 +470,7 @@ private fun GardenGrid(
                                 )
                                 .then(
                                     if (plant == null && placing)
-                                        Modifier.border(2.dp, PgPrimary.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+                                        Modifier.border(2.dp, GgPrimary.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
                                     else Modifier
                                 )
                                 .then(
@@ -591,7 +591,7 @@ private fun PlacementBanner(seedName: String, onCancel: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(PgMoss)
+            .background(GgMoss)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -600,7 +600,7 @@ private fun PlacementBanner(seedName: String, onCancel: () -> Unit) {
             fontFamily = Nunito,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
-            color = PgPrimaryDeep,
+            color = GgPrimaryDeep,
             modifier = Modifier.weight(1f),
         )
         Text(
@@ -608,7 +608,7 @@ private fun PlacementBanner(seedName: String, onCancel: () -> Unit) {
             fontFamily = Nunito,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
-            color = PgInkSoft,
+            color = GgInkSoft,
             modifier = Modifier.clickable(onClick = onCancel).padding(start = 10.dp),
         )
     }
@@ -626,11 +626,11 @@ private fun SeedPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(PgBgSage)
+                .background(GgBgSage)
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Plant a seed", fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Text("Plant a seed", fontFamily = Caprasimo, fontSize = 22.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(4.dp))
             if (seeds.isEmpty()) {
                 Text(
@@ -638,7 +638,7 @@ private fun SeedPickerSheet(
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.5.sp,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp),
                 )
@@ -648,7 +648,7 @@ private fun SeedPickerSheet(
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp,
-                    color = PgInkSoft,
+                    color = GgInkSoft,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(16.dp))
@@ -667,7 +667,7 @@ private fun SeedPickerSheet(
                                 .padding(12.dp),
                         ) {
                             Box(
-                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)).background(PgMoss),
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)).background(GgMoss),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Plant(
@@ -681,7 +681,7 @@ private fun SeedPickerSheet(
                                 fontFamily = Nunito,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
-                                color = PgInk,
+                                color = GgInk,
                             )
                         }
                     }
@@ -693,7 +693,7 @@ private fun SeedPickerSheet(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
             )
         }
@@ -732,7 +732,7 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
             drawArc(
-                color = PgPrimary,
+                color = GgPrimary,
                 startAngle = -90f, sweepAngle = 360f * animProgress, useCenter = false,
                 topLeft = Offset(pad, pad), size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
@@ -744,7 +744,7 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
                 .graphicsLayer { scaleX = pulse; scaleY = pulse }
                 .pressScale(interaction, pressedScale = 0.90f)
                 .clip(CircleShape)
-                .background(Brush.verticalGradient(listOf(PgPrimary, PgPrimaryDeep)))
+                .background(Brush.verticalGradient(listOf(GgPrimary, GgPrimaryDeep)))
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
@@ -753,9 +753,9 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            PgIcon(
-                name = PgIconName.Mic,
-                color = PgBgCream,
+            GgIcon(
+                name = GgIconName.Mic,
+                color = GgBgCream,
                 size = 40.dp,
                 contentDescription = "Record a gratitude note",
             )
@@ -858,11 +858,11 @@ internal fun NewEntrySheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(PgBgSage)
+                .background(GgBgSage)
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("Share a kind thought", fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Text("Share a kind thought", fontFamily = Caprasimo, fontSize = 22.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(16.dp))
 
             // Mic
@@ -871,17 +871,17 @@ internal fun NewEntrySheet(
                     .size(84.dp)
                     .clip(CircleShape)
                     .background(
-                        if (listening) Brush.verticalGradient(listOf(PgAccent, Color(0xFFD88040)))
-                        else Brush.verticalGradient(listOf(PgPrimary, PgPrimaryDeep))
+                        if (listening) Brush.verticalGradient(listOf(GgAccent, Color(0xFFD88040)))
+                        else Brush.verticalGradient(listOf(GgPrimary, GgPrimaryDeep))
                     )
                     .clickable(
                         onClickLabel = if (listening) "Stop recording" else "Start recording",
                     ) { onMicTap() },
                 contentAlignment = Alignment.Center,
             ) {
-                PgIcon(
-                    name = PgIconName.Mic,
-                    color = PgBgCream,
+                GgIcon(
+                    name = GgIconName.Mic,
+                    color = GgBgCream,
                     size = 34.dp,
                     contentDescription = if (listening) "Stop recording" else "Start recording",
                 )
@@ -892,7 +892,7 @@ internal fun NewEntrySheet(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.5.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 textAlign = TextAlign.Center,
             )
 
@@ -912,15 +912,15 @@ internal fun NewEntrySheet(
                         "Something you're grateful for…",
                         fontFamily = Nunito,
                         fontSize = 15.sp,
-                        color = PgInkMuted,
+                        color = GgInkMuted,
                     )
                 }
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it; isVoice = false },
-                    textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = PgInk),
+                    textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = GgInk),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                    cursorBrush = SolidColor(PgPrimary),
+                    cursorBrush = SolidColor(GgPrimary),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -939,7 +939,7 @@ internal fun NewEntrySheet(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
             )
         }
@@ -972,18 +972,18 @@ private fun MicBlockedDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) 
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(PgBgSage)
+                .background(GgBgSage)
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                modifier = Modifier.size(72.dp).clip(CircleShape).background(PgMoss),
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(GgMoss),
                 contentAlignment = Alignment.Center,
             ) {
-                PgIcon(name = PgIconName.Mic, color = PgInkMuted, size = 34.dp)
+                GgIcon(name = GgIconName.Mic, color = GgInkMuted, size = 34.dp)
             }
             Spacer(Modifier.height(14.dp))
-            Text("Microphone is off", fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Text("Microphone is off", fontFamily = Caprasimo, fontSize = 22.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(10.dp))
             Text(
                 "To speak your gratitude, turn the microphone back on in Settings — " +
@@ -991,7 +991,7 @@ private fun MicBlockedDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) 
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Medium,
                 fontSize = 13.5.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
@@ -1002,7 +1002,7 @@ private fun MicBlockedDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) 
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
             )
         }
@@ -1033,12 +1033,12 @@ private fun PlantDetailDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(PgBgSage)
+                .background(GgBgSage)
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
-                modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)).background(PgMoss),
+                modifier = Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)).background(GgMoss),
                 contentAlignment = Alignment.Center,
             ) {
                 Plant(
@@ -1048,19 +1048,19 @@ private fun PlantDetailDialog(
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Text(plantNameFromSlug(slug), fontFamily = Caprasimo, fontSize = 22.sp, color = PgPrimaryDeep)
+            Text(plantNameFromSlug(slug), fontFamily = Caprasimo, fontSize = 22.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "$stageLabel · ${plant.health.replaceFirstChar { it.uppercase() }}",
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.5.sp,
-                color = PgInkSoft,
+                color = GgInkSoft,
             )
             Spacer(Modifier.height(18.dp))
 
             if (isMature) {
-                Text("Fully grown 🌼", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PgPrimary)
+                Text("Fully grown 🌼", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GgPrimary)
             } else {
                 PillButton(
                     text = if (watering) "Watering…" else "Water · 10 coins",
@@ -1075,7 +1075,7 @@ private fun PlantDetailDialog(
                         fontFamily = Nunito,
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.5.sp,
-                        color = PgInkMuted,
+                        color = GgInkMuted,
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -1088,7 +1088,7 @@ private fun PlantDetailDialog(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.5.sp,
-                color = PgAccentDeep,
+                color = GgAccentDeep,
                 modifier = Modifier
                     .clip(RoundedCornerShape(percent = 50))
                     .clickable { if (confirmDig) onDigUp() else confirmDig = true }
@@ -1100,7 +1100,7 @@ private fun PlantDetailDialog(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
-                color = PgInkMuted,
+                color = GgInkMuted,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp),
             )
         }
