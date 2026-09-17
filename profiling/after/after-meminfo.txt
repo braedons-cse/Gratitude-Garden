@@ -1,7 +1,7 @@
 Applications Memory Usage (in Kilobytes):
 Uptime: 11108190 Realtime: 12048319
 
-** MEMINFO in pid 19236 [com.cse5236.gratitudegarden] **
+** MEMINFO in pid 19236 [com.gratitudegarden.app] **
                    Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
                  Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
                 ------   ------   ------   ------   ------   ------   ------   ------

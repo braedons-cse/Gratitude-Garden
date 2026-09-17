@@ -12,8 +12,8 @@ shippable product.
 
 | | |
 | --- | --- |
-| Status | Feature-complete course build; pre-release |
-| `applicationId` | `com.cse5236.gratitudegarden` — **must be renamed before first publish** (see [0.1](#tier-0--release-blockers)) |
+| Status | Feature-complete; pre-release |
+| `applicationId` | `com.gratitudegarden.app` — renamed off the course namespace in [0.1](#tier-0--release-blockers); **permanent once published** |
 | Version | `versionCode 1` / `versionName 1.0` — never published |
 | Min / target SDK | 28 / 36 |
 | Release build | Unsigned, `isMinifyEnabled = false` — not yet shippable (see [0.2](#tier-0--release-blockers)) |
@@ -57,7 +57,7 @@ but disqualifying on a public store listing.
 
 | # | Item | Size | Why it blocks |
 | --- | --- | --- | --- |
-| 0.1 | **Rebrand off the course namespace** | M | `applicationId` and the whole `com.cse5236.*` package tree are baked into the manifest and every test. The application ID is **permanent once published**. Pick the real name first, then rename in one pass — this only gets more expensive with every feature added. |
+| 0.1 | **Rebrand off the course namespace** | M | ✅ **Done** — `com.cse5236.gratitudegarden` → `com.gratitudegarden.app`, across `namespace`, `applicationId`, all 48 source files, and the reminder broadcast action. The application ID is **permanent once published**, which is why this landed before any feature work. |
 | 0.2 | **Signing, minification, real release build** | S/M | No signing config exists and R8 is off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
 | 0.3 | **Get the admin dashboard out of the consumer build** | S | `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
 | 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, microphone, notifications. The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
@@ -139,21 +139,20 @@ per unit of work.
 
 ### Suggested sequencing
 
-1. **Foundation first:** 0.1 rebrand, 0.2 signing, 0.3 admin split. All three get strictly
-   more painful the more code exists. Before any feature work.
+1. **Foundation first:** 0.1 rebrand (✅ done), 0.2 signing, 0.3 admin split. All three get
+   strictly more painful the more code exists. Before any feature work.
 2. **The structural bet:** 1.1 offline/Room. Everything after is easier with it in place;
    everything built before it has to be retrofitted.
 3. **The retention loop:** 1.3 streak freeze (cheapest win on the list), 1.2 widget,
    1.4 photos + mood.
-4. **Launch prep:** 0.4 privacy/Data Safety, 0.5 RLS audit, 0.6 crash reporting, 0.7 listing
-   assets → ship to a closed track and get ~20 real testers before public release.
+4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting, 0.7 listing assets → ship
+   to a closed track and get ~20 real testers before public release.
 5. **Post-launch:** 1.5 insights, 2.1 privacy features, 2.3 monetization, 2.4 localization.
 
 ### Open decisions
 
 These block or reshape the work above and should be settled before building.
 
-- **What's the real package name / brand?** Blocks 0.1, and 0.1 blocks everything.
 - **Free forever, or free + subscription?** Decides whether 2.3 shapes 1.3's economy design.
 - **Is E2E encryption (2.1) a core promise or a nice-to-have?** It constrains 1.5 insights
   and the admin tooling — a fork in the road, not a later add-on.
@@ -179,7 +178,7 @@ These block or reshape the work above and should be settled before building.
 ## Project structure
 
 ```
-app/src/main/java/com/cse5236/gratitudegarden/
+app/src/main/java/com/gratitudegarden/app/
 ├─ GratitudeGardenApplication.kt   # builds AppContainer once per process
 ├─ MainActivity.kt
 ├─ di/

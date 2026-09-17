@@ -1,7 +1,7 @@
 Applications Graphics Acceleration Info:
 Uptime: 11108100 Realtime: 12048229
 
-** Graphics info for pid 19236 [com.cse5236.gratitudegarden] **
+** Graphics info for pid 19236 [com.gratitudegarden.app] **
 
 Stats since: 11102166231076ns
 Total frames rendered: 415
@@ -53,10 +53,10 @@ Total GPU memory usage:
 
 Profile data in ms:
 
-	com.cse5236.gratitudegarden/com.cse5236.gratitudegarden.MainActivity/android.view.ViewRootImpl@236b241 (visibility=0)
+	com.gratitudegarden.app/com.gratitudegarden.app.MainActivity/android.view.ViewRootImpl@236b241 (visibility=0)
 View hierarchy:
 
-  com.cse5236.gratitudegarden/com.cse5236.gratitudegarden.MainActivity/android.view.ViewRootImpl@236b241
+  com.gratitudegarden.app/com.gratitudegarden.app.MainActivity/android.view.ViewRootImpl@236b241
   7 views, 13.77 kB of render nodes
 
 
