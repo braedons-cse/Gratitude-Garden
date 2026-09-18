@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.semantics.contentDescription
@@ -921,7 +922,7 @@ internal fun NewEntrySheet(
                     textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = GgInk),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     cursorBrush = SolidColor(GgPrimary),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("new_entry_text_field"),
                 )
             }
 
@@ -932,6 +933,7 @@ internal fun NewEntrySheet(
                 onClick = { onSubmit(text, isVoice) },
                 enabled = text.isNotBlank() && !submitting,
                 modifier = Modifier.fillMaxWidth(),
+                testTag = "plant_it_button",
             )
             Spacer(Modifier.height(8.dp))
             Text(

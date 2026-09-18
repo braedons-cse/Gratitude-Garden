@@ -651,31 +651,30 @@ adb shell am start -n com.gratitudegarden.app/.MainActivity                 # la
 > VPN or use a physical device — see [`docs/perf-nfr-journal.md`](docs/perf-nfr-journal.md),
 > which hit the same wall during profiling.
 
-**If the app hangs on the splash screen**, it's memory, not a code bug. `Medium_Phone` has
-2 GB of RAM, and a Play Store system image spends most of it on Google services. With under
-~400 MB free the debug build thrashes during startup and Android kills it:
+**Give the AVD 4 GB of RAM.** A Play Store system image spends most of its memory on Google
+services, so on a 2 GB device the debug build thrashes during startup and Android kills it
+before it draws a frame:
 
 ```
 E ActivityManager: ANR in com.gratitudegarden.app
   Reason: Process ... failed to complete startup
 ```
 
-The script warns when free memory is low. Fixes, cheapest first: `-ColdBoot` to clear
-accumulated state; force-stop whatever else is running (`adb shell am force-stop <pkg>`);
-or raise the AVD to 4 GB in **Device Manager → Edit → Show Advanced Settings → RAM**. Even
-when it succeeds, expect a ~13 s cold start on this device — debug builds are unoptimised
-and there's no baseline profile.
+Set it in **Device Manager → Edit → Show Advanced Settings → RAM** (or `hw.ramSize=4096` in
+the AVD's `config.ini`), then cold boot — a snapshot saved at the old size is not reusable.
+Measured on this project: 2 GB left ~180 MB free and the app either ANR'd or took 16 s to
+appear; 4 GB leaves ~3 GB free and it appears in under 3 s. The script warns when free
+memory is low, and `-ColdBoot` clears a device that has accumulated junk.
 
-With a device attached, `./gradlew connectedCheck` runs the instrumented tests. They don't
-need Supabase — they only exercise pre-auth screens.
+With a device attached, `./gradlew connectedCheck` runs the instrumented tests — all four
+pass. They don't need Supabase; they only exercise pre-auth screens and the new-entry sheet
+in isolation.
 
-> **The three Compose UI tests currently fail on API 34+**, including this AVD, with
-> `NoSuchMethodException: android.hardware.input.InputManager.getInstance`. Espresso 3.5.1
-> reaches for a hidden platform method that newer Android releases no longer expose; the
-> test dependencies (`espresso-core` 3.5.1, `androidx.test.ext:junit` 1.1.5) predate the
-> SDK the app now targets. It is a tooling-version mismatch, not an app defect —
-> `ExampleInstrumentedTest` passes, and the same screens render correctly by hand.
-> Upgrading `espresso` / `androidxJunit` in `gradle/libs.versions.toml` is the fix.
+The UI tests drive the app through `testTag`s rather than on-screen text, so they survive
+copy changes. `GgTextField` and `PillButton` take an optional `testTag` that is applied to
+the node carrying the real semantics — the inner `BasicTextField` and the clickable button
+face — rather than to the outer layout wrapper, which would have no text-input or enabled
+state to assert against.
 
 ---
 

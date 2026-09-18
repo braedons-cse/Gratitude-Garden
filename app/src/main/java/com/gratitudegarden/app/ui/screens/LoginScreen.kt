@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,6 +97,7 @@ fun LoginScreen(
             placeholder = "Email",
             icon = GgIconName.Mail,
             keyboardType = KeyboardType.Email,
+            testTag = "login_email_field",
         )
         Spacer(Modifier.height(12.dp))
         GgTextField(
@@ -105,6 +107,7 @@ fun LoginScreen(
             icon = GgIconName.Lock,
             isPassword = true,
             imeAction = ImeAction.Done,
+            testTag = "login_password_field",
         )
 
         Row(
@@ -137,6 +140,7 @@ fun LoginScreen(
             onClick = { if (!loading) onLogIn(email, password) },
             enabled = !loading,
             modifier = Modifier.fillMaxWidth(),
+            testTag = "login_button",
         )
 
         Row(
@@ -176,7 +180,9 @@ fun LoginScreen(
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = GgPrimary,
-                modifier = Modifier.clickable(onClick = onSignUp),
+                modifier = Modifier
+                    .clickable(onClick = onSignUp)
+                    .testTag("login_to_signup_link"),
             )
         }
     }

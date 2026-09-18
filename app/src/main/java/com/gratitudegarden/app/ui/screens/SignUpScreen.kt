@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -131,6 +132,7 @@ fun SignUpScreen(
             placeholder = "Rosa",
             label = "What should we call you?",
             icon = GgIconName.User,
+            testTag = "signup_name_field",
         )
         Spacer(Modifier.height(12.dp))
         GgTextField(
@@ -222,6 +224,7 @@ fun SignUpScreen(
             },
             enabled = !loading && consent && passwordProblem == null,
             modifier = Modifier.fillMaxWidth(),
+            testTag = "signup_button",
         )
 
         Spacer(Modifier.height(14.dp))
@@ -234,7 +237,9 @@ fun SignUpScreen(
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = GgPrimary,
-                modifier = Modifier.clickable(onClick = onBackToLogin),
+                modifier = Modifier
+                    .clickable(onClick = onBackToLogin)
+                    .testTag("signup_to_login_link"),
             )
         }
     }

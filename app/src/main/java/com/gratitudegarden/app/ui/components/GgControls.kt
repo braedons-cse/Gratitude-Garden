@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -51,6 +52,13 @@ import com.gratitudegarden.app.ui.theme.GgPrimary
 import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import com.gratitudegarden.app.ui.theme.pressScale
 
+/**
+ * Tags the node only when a tag was supplied, so callers that don't test a
+ * control don't put a stray tag in the semantics tree.
+ */
+private fun Modifier.optionalTestTag(tag: String?): Modifier =
+    if (tag == null) this else this.testTag(tag)
+
 /** White, moss-bordered text field with a leading icon and optional label. */
 @Composable
 fun GgTextField(
@@ -63,6 +71,8 @@ fun GgTextField(
     isPassword: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Next,
+    // Lands on the inner BasicTextField, so UI tests can type into it directly.
+    testTag: String? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(14.dp)
@@ -116,7 +126,7 @@ fun GgTextField(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
                     cursorBrush = SolidColor(GgPrimary),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().optionalTestTag(testTag),
                 )
             }
             if (isPassword) {
@@ -146,6 +156,9 @@ fun PillButton(
     modifier: Modifier = Modifier,
     primary: Boolean = true,
     enabled: Boolean = true,
+    // Lands on the clickable face, which is where the click and enabled
+    // semantics live -- the outer Box is only the ledge/press-scale wrapper.
+    testTag: String? = null,
 ) {
     val shape = RoundedCornerShape(percent = 50)
     val interaction = remember { MutableInteractionSource() }
@@ -172,7 +185,8 @@ fun PillButton(
                     indication = null,
                     enabled = enabled,
                     onClick = onClick,
-                ),
+                )
+                .optionalTestTag(testTag),
             contentAlignment = Alignment.Center,
         ) {
             Text(
