@@ -42,6 +42,7 @@ shippable product.
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
 - [Setup & build](#setup--build)
+- [Run on an emulator](#run-on-an-emulator)
 - [Granting / changing admins](#granting--changing-admins)
 
 ---
@@ -605,6 +606,76 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
 **Release builds are not yet configured.** There is no signing config and `isMinifyEnabled`
 is `false`, so `assembleRelease` produces an unsigned, unminified artifact that must not be
 uploaded anywhere. See roadmap [0.2](#tier-0--release-blockers).
+
+---
+
+## Run on an emulator
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-emulator.ps1
+```
+
+That boots the virtual device, installs the debug build, and opens the app — one command
+from a cold machine to the login screen. It is safe to re-run: if an emulator is already
+running it is reused rather than starting a second one.
+
+The script finds the SDK itself (`ANDROID_HOME` → `ANDROID_SDK_ROOT` → `sdk.dir` from
+`local.properties`), so nothing needs to be on your `PATH`. It also points `JAVA_HOME` at
+Android Studio's bundled JBR 21 when `JAVA_HOME` is unset, because
+`gradle/gradle-daemon-jvm.properties` pins the Gradle daemon to Java 21.
+
+| Flag | Effect |
+| --- | --- |
+| `-Avd <name>` | Boot a different AVD (default `Medium_Phone`). |
+| `-ColdBoot` | Ignore the saved snapshot and boot from scratch — fixes a wedged device. |
+| `-SkipInstall` | Don't rebuild or reinstall; just launch what's on the device. |
+| `-NoLaunch` | Leave the emulator running without starting the app. |
+| `-Screenshot <path>` | Save a PNG of the screen once the app is up. |
+
+**The AVD.** Any image at or above API 28 works (`minSdk = 28`). The one used here is
+`Medium_Phone` — API 37, x86_64, Play Store. To create another, use Android Studio's
+**Device Manager**; the `avdmanager` CLI lives in the optional *Android SDK Command-line
+Tools* package, which isn't required for any of the above. `emulator -list-avds` shows what
+you already have.
+
+Doing it by hand instead:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd Medium_Phone   # boot
+.\gradlew.bat installDebug                                                  # install
+adb shell am start -n com.gratitudegarden.app/.MainActivity                 # launch
+```
+
+> **Behind a VPN, the emulator can't reach Supabase.** The UI renders fine and you can
+> browse the pre-auth screens, but signing in fails with a request timeout. Disconnect the
+> VPN or use a physical device — see [`docs/perf-nfr-journal.md`](docs/perf-nfr-journal.md),
+> which hit the same wall during profiling.
+
+**If the app hangs on the splash screen**, it's memory, not a code bug. `Medium_Phone` has
+2 GB of RAM, and a Play Store system image spends most of it on Google services. With under
+~400 MB free the debug build thrashes during startup and Android kills it:
+
+```
+E ActivityManager: ANR in com.gratitudegarden.app
+  Reason: Process ... failed to complete startup
+```
+
+The script warns when free memory is low. Fixes, cheapest first: `-ColdBoot` to clear
+accumulated state; force-stop whatever else is running (`adb shell am force-stop <pkg>`);
+or raise the AVD to 4 GB in **Device Manager → Edit → Show Advanced Settings → RAM**. Even
+when it succeeds, expect a ~13 s cold start on this device — debug builds are unoptimised
+and there's no baseline profile.
+
+With a device attached, `./gradlew connectedCheck` runs the instrumented tests. They don't
+need Supabase — they only exercise pre-auth screens.
+
+> **The three Compose UI tests currently fail on API 34+**, including this AVD, with
+> `NoSuchMethodException: android.hardware.input.InputManager.getInstance`. Espresso 3.5.1
+> reaches for a hidden platform method that newer Android releases no longer expose; the
+> test dependencies (`espresso-core` 3.5.1, `androidx.test.ext:junit` 1.1.5) predate the
+> SDK the app now targets. It is a tooling-version mismatch, not an app defect —
+> `ExampleInstrumentedTest` passes, and the same screens render correctly by hand.
+> Upgrading `espresso` / `androidxJunit` in `gradle/libs.versions.toml` is the fix.
 
 ---
 
