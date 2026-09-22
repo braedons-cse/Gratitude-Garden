@@ -63,6 +63,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gratitudegarden.app.ui.admin.AdminTools
 import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
 import com.gratitudegarden.app.ui.me.MeViewModel
@@ -262,8 +263,9 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         )
         Spacer(Modifier.height(28.dp))
 
-        // Admin-only entry point. Hidden entirely for normal users.
-        if (ui.isAdmin) {
+        // Admin-only entry point. Hidden entirely for normal users, and absent from the
+        // consumer build altogether (the dashboard only exists in the staging flavor).
+        if (ui.isAdmin && AdminTools.AVAILABLE) {
             PillButton(
                 text = "Admin Dashboard",
                 onClick = onOpenAdmin,

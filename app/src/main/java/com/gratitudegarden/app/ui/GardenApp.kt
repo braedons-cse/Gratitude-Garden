@@ -30,10 +30,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.gratitudegarden.app.ui.admin.AdminTools
 import com.gratitudegarden.app.ui.auth.AuthViewModel
 import com.gratitudegarden.app.ui.components.BottomNav
 import com.gratitudegarden.app.ui.components.HomeNavItems
-import com.gratitudegarden.app.ui.screens.AdminDashboardScreen
 import com.gratitudegarden.app.ui.screens.GardenRoute
 import com.gratitudegarden.app.ui.screens.JournalRoute
 import com.gratitudegarden.app.ui.screens.LoginScreen
@@ -173,7 +173,7 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
             exit = slideOutHorizontally(tween(280)) { it } + fadeOut(tween(180)),
         ) {
             Box(Modifier.fillMaxSize().background(GgBgSage).systemBarsPadding()) {
-                AdminDashboardScreen(onBack = { showAdmin = false })
+                AdminTools.Dashboard(onBack = { showAdmin = false })
             }
         }
     }

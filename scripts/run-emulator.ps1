@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
     Boots an Android emulator, installs the debug build, and launches Gratitude Garden.
+    Installs the staging flavor (admin dashboard included) unless -Consumer is given.
 
 .DESCRIPTION
     One entry point for seeing the app run. Safe to re-run: if an emulator is already
@@ -18,6 +19,10 @@
     Same, then save a screenshot of whatever is on screen.
 
 .EXAMPLE
+    .\scripts\run-emulator.ps1 -Consumer
+    Install and open the consumer flavor -- the build that ships to Play, no admin tools.
+
+.EXAMPLE
     .\scripts\run-emulator.ps1 -ColdBoot -SkipInstall
     Wipe the saved snapshot state and boot fresh, without rebuilding or installing.
 #>
@@ -30,7 +35,11 @@ param(
     # wedged or stale snapshot.
     [switch] $ColdBoot,
 
-    # Skip `gradlew installDebug` -- use whatever is already installed on the device.
+    # Run the consumer flavor (what ships to Play) instead of staging. The two install
+    # side by side under different application IDs.
+    [switch] $Consumer,
+
+    # Skip `gradlew install<Flavor>Debug` -- use whatever is already installed on the device.
     [switch] $SkipInstall,
 
     # Skip launching MainActivity (just leaves the emulator up).
@@ -46,8 +55,11 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$AppId    = 'com.gratitudegarden.app'
-$Activity = "$AppId/.MainActivity"
+$Flavor   = if ($Consumer) { 'Consumer' } else { 'Staging' }
+$AppId    = if ($Consumer) { 'com.gratitudegarden.app' } else { 'com.gratitudegarden.app.staging' }
+# The class keeps the namespace package even when the ID carries a suffix, so it's spelled
+# out in full: `$AppId/.MainActivity` would resolve to ...app.staging.MainActivity.
+$Activity = "$AppId/com.gratitudegarden.app.MainActivity"
 
 function Write-Step { param([string] $Message) Write-Host "==> $Message" -ForegroundColor Cyan }
 function Write-Note { param([string] $Message) Write-Host "    $Message" -ForegroundColor DarkGray }
@@ -162,11 +174,11 @@ $env:ANDROID_SERIAL = $serial
 if ($SkipInstall) {
     Write-Step "Skipping install (-SkipInstall)"
 } else {
-    Write-Step "gradlew installDebug"
+    Write-Step "gradlew install${Flavor}Debug"
     Push-Location $RepoRoot
     try {
-        & (Join-Path $RepoRoot 'gradlew.bat') installDebug
-        if ($LASTEXITCODE -ne 0) { throw "installDebug failed (exit $LASTEXITCODE)." }
+        & (Join-Path $RepoRoot 'gradlew.bat') "install${Flavor}Debug"
+        if ($LASTEXITCODE -ne 0) { throw "install${Flavor}Debug failed (exit $LASTEXITCODE)." }
     } finally {
         Pop-Location
     }

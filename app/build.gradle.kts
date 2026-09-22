@@ -41,6 +41,20 @@ android {
         )
     }
 
+    // `consumer` is what ships to Play. `staging` is the same app plus the admin dashboard
+    // (src/staging), installed side by side under its own ID so it never reaches the store.
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("consumer") {
+            dimension = "distribution"
+        }
+        create("staging") {
+            dimension = "distribution"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

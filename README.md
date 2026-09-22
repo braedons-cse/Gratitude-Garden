@@ -185,9 +185,7 @@ app/src/main/java/com/gratitudegarden/app/
 ├─ di/
 │  └─ AppContainer.kt              # SupabaseClient + repositories (manual DI)
 ├─ data/
-│  ├─ GardenRepository.kt          # user-facing reads + RPC calls (auth, journal, garden, shop)
-│  ├─ AdminModels.kt               # admin table-spec engine + payload builder
-│  └─ AdminRepository.kt           # generic admin CRUD over JsonObject + admin check
+│  └─ GardenRepository.kt          # user-facing reads + RPC calls (auth, journal, garden, shop)
 ├─ notifications/
 │  ├─ ReminderScheduler.kt         # schedules/cancels the daily alarm
 │  ├─ ReminderReceiver.kt          # fires -> posts the notification, re-arms
@@ -202,13 +200,21 @@ app/src/main/java/com/gratitudegarden/app/
 │  ├─ theme/                       # Color.kt, Theme.kt, Type.kt (Caprasimo / Nunito)
 │  ├─ sprites/                     # vector plant / icon drawing
 │  ├─ garden/ shop/ journal/ me/   # feature ViewModels + UI state
-│  ├─ admin/
-│  │  └─ AdminViewModel.kt         # adminUiState + create/save/delete actions
 │  └─ screens/
 │     ├─ GardenScreen.kt ShopScreen.kt JournalScreen.kt MeScreen.kt
-│     ├─ LoginScreen.kt SignUpScreen.kt
-│     └─ AdminDashboardScreen.kt   # the admin dashboard UI
+│     └─ LoginScreen.kt SignUpScreen.kt
 └─ util/                           # lifecycle logging helpers
+
+app/src/staging/java/com/gratitudegarden/app/   # staging flavor only — never in the Play build
+├─ data/
+│  ├─ AdminModels.kt               # admin table-spec engine + payload builder
+│  └─ AdminRepository.kt           # generic admin CRUD over JsonObject + admin check
+└─ ui/
+   ├─ admin/
+   │  ├─ AdminTools.kt             # the seam main calls; the consumer copy is an empty stub
+   │  └─ AdminViewModel.kt         # adminUiState + create/save/delete actions
+   └─ screens/
+      └─ AdminDashboardScreen.kt   # the admin dashboard UI
 
 supabase/migrations/                # source of truth for the schema (14 files)
 db/                                 # older hand-written SQL notes (subset of the above)
@@ -227,7 +233,7 @@ profiling/                          # before/after profiling evidence
     (journal entries, garden, plants, stats, wallet, profile, shop). Business logic
     (coins, streaks, provisioning) lives in Postgres `SECURITY DEFINER` **RPCs**; the
     repo just calls them and reads RLS-scoped rows.
-  - `AdminRepository` — admin-only generic CRUD (see below).
+  - `AdminRepository` — admin-only generic CRUD, staging flavor only (see below).
 - **ViewModels** expose a single immutable `UiState` via `StateFlow`. They are built
   by `viewModelFactory` blocks that pull the repository from the `Application` through
   `CreationExtras` extensions in `ViewModelExt.kt`.
@@ -489,8 +495,9 @@ wipes every associated row.
 
 ### Admin CRUD dashboard
 
-> **Roadmap 0.3:** this surface must be moved out of the consumer build (a `staging`
-> flavor is the preferred option) before public release.
+> **Staging flavor only** (roadmap 0.3). None of this is compiled into the `consumer` build
+> that ships to Play, where `AdminTools.AVAILABLE` is `false` and the Me-screen button never
+> renders. RLS is still the actual guard; this just keeps the admin UI out of the store APK.
 
 An **admin-only** surface demonstrating **Create / Read / Update / Delete for every one of
 the nine tables** from inside the app. It is reached from a button at the bottom of the
@@ -595,11 +602,17 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
    These are surfaced to code as `BuildConfig.SUPABASE_URL` / `BuildConfig.SUPABASE_ANON_KEY`.
 3. **Build and test:**
    ```bash
-   ./gradlew assembleDebug      # build the debug APK
-   ./gradlew installDebug       # install on a connected device/emulator
-   ./gradlew testDebugUnitTest  # unit tests
-   ./gradlew connectedCheck     # instrumented UI tests (needs a device/emulator)
+   ./gradlew assembleStagingDebug      # build the debug APK (staging flavor)
+   ./gradlew installStagingDebug       # install on a connected device/emulator
+   ./gradlew testStagingDebugUnitTest  # unit tests
+   ./gradlew connectedCheck            # instrumented UI tests, every flavor (needs a device)
    ```
+
+   There are two **product flavors**. `consumer` is the build that ships to Play. `staging` is
+   the same app plus the admin dashboard, which lives only in `app/src/staging`. It installs
+   next to the consumer app as `com.gratitudegarden.app.staging`. `main` reaches the dashboard
+   through `ui/admin/AdminTools`, a same-named object in each flavor. The consumer version is
+   an empty stub, so no admin code is compiled into the store APK.
 
 > `local.properties` is gitignored on purpose — keys are never committed.
 
@@ -626,6 +639,7 @@ Android Studio's bundled JBR 21 when `JAVA_HOME` is unset, because
 
 | Flag | Effect |
 | --- | --- |
+| `-Consumer` | Install and open the consumer flavor (the Play build, no admin tools) instead of staging. |
 | `-Avd <name>` | Boot a different AVD (default `Medium_Phone`). |
 | `-ColdBoot` | Ignore the saved snapshot and boot from scratch — fixes a wedged device. |
 | `-SkipInstall` | Don't rebuild or reinstall; just launch what's on the device. |
@@ -642,8 +656,8 @@ Doing it by hand instead:
 
 ```powershell
 & "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" -avd Medium_Phone   # boot
-.\gradlew.bat installDebug                                                  # install
-adb shell am start -n com.gratitudegarden.app/.MainActivity                 # launch
+.\gradlew.bat installStagingDebug                                           # install
+adb shell am start -n com.gratitudegarden.app.staging/com.gratitudegarden.app.MainActivity
 ```
 
 > **Behind a VPN, the emulator can't reach Supabase.** The UI renders fine and you can

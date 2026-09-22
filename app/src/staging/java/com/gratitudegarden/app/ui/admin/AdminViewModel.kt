@@ -10,7 +10,7 @@ import com.gratitudegarden.app.data.AdminRepository
 import com.gratitudegarden.app.data.AdminScope
 import com.gratitudegarden.app.data.AdminTableSpec
 import com.gratitudegarden.app.data.cell
-import com.gratitudegarden.app.ui.adminRepo
+import com.gratitudegarden.app.ui.gardenApp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -191,6 +191,6 @@ class AdminViewModel(private val repo: AdminRepository) : ViewModel() {
     }
 
     companion object {
-        val Factory = viewModelFactory { initializer { AdminViewModel(adminRepo()) } }
+        val Factory = viewModelFactory { initializer { AdminViewModel(AdminRepository(gardenApp().container.supabase)) } }
     }
 }

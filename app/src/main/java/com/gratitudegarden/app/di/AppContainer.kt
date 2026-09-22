@@ -2,7 +2,6 @@ package com.gratitudegarden.app.di
 
 import android.content.Context
 import com.gratitudegarden.app.BuildConfig
-import com.gratitudegarden.app.data.AdminRepository
 import com.gratitudegarden.app.data.GardenRepository
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
@@ -18,7 +17,8 @@ import kotlinx.serialization.json.Json
  */
 class AppContainer(@Suppress("unused") private val context: Context) {
 
-    private val supabase: SupabaseClient = createSupabaseClient(
+    // Not private: the staging flavor builds its admin repository on this same client.
+    val supabase: SupabaseClient = createSupabaseClient(
         supabaseUrl = BuildConfig.SUPABASE_URL,
         supabaseKey = BuildConfig.SUPABASE_ANON_KEY,
     ) {
@@ -34,5 +34,4 @@ class AppContainer(@Suppress("unused") private val context: Context) {
     }
 
     val gardenRepository: GardenRepository by lazy { GardenRepository(supabase) }
-    val adminRepository: AdminRepository by lazy { AdminRepository(supabase) }
 }
