@@ -105,7 +105,7 @@ val ADMIN_USER_TABLES: List<AdminTableSpec> = listOf(
         fields = listOf(
             AdminField("reminder_enabled", "Reminder enabled", AdminFieldType.BOOL),
             AdminField("reminder_time", "Reminder time (HH:MM)", AdminFieldType.TEXT),
-            AdminField("reminder_timezone", "Reminder timezone", AdminFieldType.TEXT),
+            AdminField("time_zone", "Time zone", AdminFieldType.TEXT),
             AdminField("sounds_haptics_enabled", "Sounds / haptics", AdminFieldType.BOOL),
             AdminField("theme", "Theme", AdminFieldType.ENUM, enumValues = THEME),
             AdminField("daily_entry_cap", "Daily entry cap", AdminFieldType.INT),

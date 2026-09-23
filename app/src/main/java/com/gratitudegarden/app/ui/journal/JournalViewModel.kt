@@ -67,7 +67,7 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
                     totalEntries = stats?.totalEntries ?: page.size,
                     streak = stats?.effectiveStreak ?: 0,
                     sections = sectionsOf(loaded),
-                    entryDates = recentDates,
+                    entryDates = recentDates.map { atMostToday(it) }.toSet(),
                     endReached = page.size < PAGE_SIZE,
                     error = null,
                 )
@@ -109,10 +109,17 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
 
     private fun sectionsOf(entries: List<GratitudeEntry>): List<JournalSection> {
         val today = LocalDate.now()
-        return entries.groupBy { it.entryDate }.map { (date, items) ->
+        return entries.groupBy { atMostToday(it.entryDate) }.map { (date, items) ->
             JournalSection(label = labelFor(date, today), entries = items)
         }
     }
+
+    /**
+     * The server never dates an entry before the previous one, so after a zone change (or
+     * the move off UTC days) an entry can carry tomorrow's local date. It was written today;
+     * show it as today. ISO dates compare correctly as strings.
+     */
+    private fun atMostToday(date: String): String = minOf(date, LocalDate.now().toString())
 
     private fun labelFor(date: String, today: LocalDate): String = try {
         when (LocalDate.parse(date)) {

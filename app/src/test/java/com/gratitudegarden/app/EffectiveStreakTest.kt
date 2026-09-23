@@ -51,10 +51,16 @@ class EffectiveStreakTest {
         assertEquals(0, stats("not-a-date", 9).effectiveStreakOn(today))
     }
 
-    // A future-dated entry (clock skew / different timezone write) is not "today or
-    // yesterday", so it does not resurrect a streak.
+    // One day ahead is legitimate: the server dates an entry no earlier than the previous
+    // one, so after a zone change the last entry can sit on tomorrow's local date.
     @Test
-    fun futureEntryDateDoesNotCountAsAlive() {
-        assertEquals(0, stats("2026-07-25", 5).effectiveStreakOn(today))
+    fun entryDatedTomorrowStillCountsAsAlive() {
+        assertEquals(5, stats("2026-07-25", 5).effectiveStreakOn(today))
+    }
+
+    // Anything further out isn't a zone effect, so it doesn't resurrect a streak.
+    @Test
+    fun entryDatedTwoDaysAheadDoesNotCountAsAlive() {
+        assertEquals(0, stats("2026-07-26", 5).effectiveStreakOn(today))
     }
 }

@@ -346,6 +346,17 @@ on the streak and is stored on the row), it takes `coin_wallets FOR UPDATE` **fi
 the `coin_wallets → user_stats` lock order that `water_plant` and `purchase_item` already use.
 Acquiring them in the opposite order would open a same-user deadlock window.
 
+**A "day" is the user's local day** (`20260923140000_local_day`). The app sends its IANA zone
+(`p_time_zone`) with every entry, and the server stores it on `user_settings.time_zone` and
+dates the entry in that zone. Entries used to be dated in UTC, which for a New York user
+flipped the day at 8 PM (the reminder's default time): evening entries landed on tomorrow,
+and writing on a Monday morning and a Tuesday evening broke the streak. The zone is
+client-supplied, so the entry day is also **monotonic**:
+`greatest(local date, last_entry_date)`. Hopping east to reach tomorrow early and then back
+west can't reopen a finished day, so the most anyone gains from changing zones is one extra
+day's cap, once. The client mirrors that rule in `entryDay()` so the "thoughts left" chip
+counts the same day the cap does.
+
 Watering is held at a flat server-side `10`, matching the previous cost so the
 "Water · 10 coins" label and the affordability gate in `GardenScreen.kt` stay truthful.
 Scaling it by growth stage would be a balance change rather than a security fix.

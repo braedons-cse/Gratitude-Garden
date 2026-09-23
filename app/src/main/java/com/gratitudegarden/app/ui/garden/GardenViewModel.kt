@@ -74,7 +74,7 @@ class GardenViewModel(
             // which both wasted the round trip and dropped soft-deleted rows. Those
             // still count against the daily cap, because deleting an entry doesn't
             // refund its coins.
-            val used = repo.entriesTodayCount()
+            val used = repo.entriesTodayCount(stats?.lastEntryDate)
             _ui.update {
                 it.copy(
                     loading = false,

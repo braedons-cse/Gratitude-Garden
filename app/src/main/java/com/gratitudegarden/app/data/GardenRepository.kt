@@ -17,7 +17,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.LocalDate
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 // ── Row DTOs (partial — only the columns the UI needs) ───────────────
 @Serializable
@@ -76,18 +76,30 @@ data class UserStatsRow(
  * Optimization: the clock is injected rather than read inside the function, so this
  * is deterministic and unit-testable in isolation (no dependency on the machine's
  * current date). [effectiveStreak] is the thin convenience wrapper that supplies the
- * real UTC date. Behaviour is unchanged — the property below reads `today` exactly
+ * real local date. Behaviour is unchanged — the property below reads `today` exactly
  * as before. See docs/unit-test-optimizations.md.
  */
 fun UserStatsRow.effectiveStreakOn(today: LocalDate): Int {
     val last = lastEntryDate
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         ?: return 0
-    return if (last == today || last == today.minusDays(1)) currentStreak else 0
+    // One day ahead is legitimate: the server never dates an entry before the previous one,
+    // so after a zone change (or the move off UTC days) the last entry can sit on tomorrow.
+    return if (last >= today.minusDays(1) && last <= today.plusDays(1)) currentStreak else 0
+}
+
+/**
+ * The day the server will date the next entry: the local date, but never earlier than the
+ * previous entry. Mirrors `greatest((now() at time zone tz)::date, last_entry_date)` in
+ * `submit_gratitude_entry`, which keeps a zone change from reopening a finished day.
+ */
+fun entryDay(localToday: LocalDate, lastEntryDate: String?): LocalDate {
+    val last = lastEntryDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return localToday
+    return maxOf(localToday, last)
 }
 
 val UserStatsRow.effectiveStreak: Int
-    get() = effectiveStreakOn(LocalDate.now(ZoneOffset.UTC))
+    get() = effectiveStreakOn(LocalDate.now())
 
 @Serializable
 data class WalletRow(val balance: Int = 0)
@@ -205,6 +217,8 @@ class GardenRepository(private val client: SupabaseClient) {
             buildJsonObject {
                 put("p_entry_text", text)
                 put("p_input_method", if (voice) "voice_to_text" else "text")
+                // The server dates the entry in this zone (local day, not UTC day).
+                put("p_time_zone", ZoneId.systemDefault().id)
             },
         )
         notifyChanged()
@@ -256,12 +270,12 @@ class GardenRepository(private val client: SupabaseClient) {
      * the live rows here would show "N thoughts left" for entries the server will
      * refuse — and [entries] filters deleted rows out, so it is the wrong source.
      *
-     * Uses UTC to match the server's `(now() at time zone 'UTC')::date`, as
-     * [UserStatsRow.effectiveStreak] and [entryDatesSince] already do.
+     * "Today" is [entryDay], the same day `submit_gratitude_entry` will date the next
+     * entry, so pass the stats' `lastEntryDate`.
      */
-    suspend fun entriesTodayCount(): Int {
+    suspend fun entriesTodayCount(lastEntryDate: String?): Int {
         val uid = currentUid() ?: return 0
-        val today = LocalDate.now(ZoneOffset.UTC).toString()
+        val today = entryDay(LocalDate.now(), lastEntryDate).toString()
         return client.postgrest.from("gratitude_entries")
             .select(Columns.list("entry_date")) {
                 filter {
@@ -303,11 +317,11 @@ class GardenRepository(private val client: SupabaseClient) {
     /**
      * The set of entry dates (`yyyy-MM-dd`) within the last [days] days — exactly what
      * the Journal's week-strip needs, fetched as a narrow, bounded query instead of
-     * scanning the whole history. Compared in UTC to match how `entry_date` is stored.
+     * scanning the whole history. Uses the local date, which is how `entry_date` is stored.
      */
     suspend fun recentEntryDates(days: Int = 7): Set<String> {
         val uid = currentUid() ?: return emptySet()
-        val since = LocalDate.now(ZoneOffset.UTC).minusDays((days - 1).toLong()).toString()
+        val since = LocalDate.now().minusDays((days - 1).toLong()).toString()
         return client.postgrest.from("gratitude_entries")
             .select(Columns.list("entry_date")) {
                 filter {
