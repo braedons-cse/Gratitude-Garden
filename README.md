@@ -16,7 +16,7 @@ shippable product.
 | `applicationId` | `com.gratitudegarden.app` — renamed off the course namespace in [0.1](#tier-0--release-blockers); **permanent once published** |
 | Version | `versionCode 1` / `versionName 1.0` — never published |
 | Min / target SDK | 28 / 36 |
-| Release build | Unsigned, `isMinifyEnabled = false` — not yet shippable (see [0.2](#tier-0--release-blockers)) |
+| Release build | R8-minified, signed with the upload key; `consumer` flavor only ships to Play (see [0.2](#tier-0--release-blockers)) |
 
 ---
 
@@ -59,8 +59,8 @@ but disqualifying on a public store listing.
 | # | Item | Size | Why it blocks |
 | --- | --- | --- | --- |
 | 0.1 | **Rebrand off the course namespace** | M | ✅ **Done** — `com.cse5236.gratitudegarden` → `com.gratitudegarden.app`, across `namespace`, `applicationId`, all 48 source files, and the reminder broadcast action. The application ID is **permanent once published**, which is why this landed before any feature work. |
-| 0.2 | **Signing, minification, real release build** | S/M | No signing config exists and R8 is off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
-| 0.3 | **Get the admin dashboard out of the consumer build** | S | `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
+| 0.2 | **Signing, minification, real release build** | S/M | ✅ **Done** — R8 + resource shrinking on, release signed with an upload key kept outside the repo, and the signed build walked end to end on an emulator (signup, entries, planting, watering, journal, reminders, sign-out) with no crashes. No hand-written keep rules were needed. Play App Signing enrollment happens at first upload. *Original scope:* No signing config existed and R8 was off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
+| 0.3 | **Get the admin dashboard out of the consumer build** | S | ✅ **Done** — a `staging` flavor holds all admin code; the `consumer` build compiles an empty stub, and an admin account signed into it sees no dashboard. *Original scope:* `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
 | 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, microphone, notifications. The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
 | 0.5 | **Harden secrets and key handling** | S | ✅ **Done** — two coin-minting holes closed, then the policy audit found three more (a privilege escalation among them) and closed those too; see [Server-authoritative economy](#server-authoritative-economy) and [Client write surface](#client-write-surface). |
 | 0.6 | **Crash reporting and basic analytics** | S | Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
@@ -140,7 +140,7 @@ per unit of work.
 
 ### Suggested sequencing
 
-1. **Foundation first:** 0.1 rebrand (✅ done), 0.2 signing, 0.3 admin split. All three get
+1. **Foundation first:** 0.1 rebrand, 0.2 signing, 0.3 admin split — ✅ all done. All three get
    strictly more painful the more code exists. Before any feature work.
 2. **The structural bet:** 1.1 offline/Room. Everything after is easier with it in place;
    everything built before it has to be retrofitted.
@@ -616,9 +616,27 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
 
 > `local.properties` is gitignored on purpose — keys are never committed.
 
-**Release builds are not yet configured.** There is no signing config and `isMinifyEnabled`
-is `false`, so `assembleRelease` produces an unsigned, unminified artifact that must not be
-uploaded anywhere. See roadmap [0.2](#tier-0--release-blockers).
+**Release builds** are R8-minified and signed with the Play upload key. The keystore lives
+outside the repo; point at it from `local.properties` (or the same names as environment
+variables):
+
+```properties
+UPLOAD_STORE_FILE=C:/path/to/gratitude-garden-upload.jks   # forward slashes
+UPLOAD_STORE_PASSWORD=...
+UPLOAD_KEY_ALIAS=upload
+UPLOAD_KEY_PASSWORD=...
+```
+
+```bash
+./gradlew bundleConsumerRelease    # the AAB for Play: app/build/outputs/bundle/consumerRelease/
+./gradlew assembleConsumerRelease  # an installable APK of the same build, for walkthroughs
+```
+
+Without those properties release still builds, just unsigned. Only ever upload `consumer`;
+`staging` carries the admin dashboard. Crash stack traces from release are obfuscated — retrace
+them against `app/build/outputs/mapping/consumerRelease/mapping.txt`, which must be kept for
+every build that gets uploaded. **Back up the keystore and its password**: losing them means
+never shipping an update under this application ID again.
 
 ---
 
@@ -694,8 +712,10 @@ state to assert against.
 
 ## Granting / changing admins
 
-The demo admin is the account with `display_name = 'Jeremy2'`. To change it, run in the
-Supabase SQL editor:
+Current admins are `Admin Demo`, `reminderTest1`, and `TestAdmin`, the account used for
+emulator walkthroughs. Its credentials live only in the gitignored `local.properties`
+(`TEST_ADMIN_EMAIL` / `TEST_ADMIN_PASSWORD`), never in the repo. Admin only does
+anything in the `staging` flavor. To change who is an admin, run in the Supabase SQL editor:
 
 ```sql
 select id, display_name, is_admin from public.profiles;          -- find the id
