@@ -13,6 +13,7 @@ import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
 import com.gratitudegarden.app.ui.gardenApp
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -90,7 +91,7 @@ class GardenViewModel(
                 )
             }
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, message = e.message ?: "Couldn't load your garden") }
+            _ui.update { it.copy(loading = false, message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
         }
     }
 
@@ -107,7 +108,7 @@ class GardenViewModel(
                 _ui.update { it.copy(submitting = false, message = "${note}a kind thought planted 🌱") }
                 maybeOfferReminders()
             } catch (e: Exception) {
-                _ui.update { it.copy(submitting = false, message = e.message ?: "Couldn't save your thought") }
+                _ui.update { it.copy(submitting = false, message = e.toUserMessage("Couldn't save your thought", ::friendly)) }
             }
         }
     }
@@ -150,7 +151,7 @@ class GardenViewModel(
                 load()
                 _ui.update { it.copy(watering = false, message = "Watered 🌱 · -10 coins") }
             } catch (e: Exception) {
-                _ui.update { it.copy(watering = false, message = e.message ?: "Couldn't water") }
+                _ui.update { it.copy(watering = false, message = e.toUserMessage("Couldn't water your plant", ::friendly)) }
             }
         }
     }
@@ -165,7 +166,7 @@ class GardenViewModel(
                 load()
                 _ui.update { it.copy(placing = false, message = "Planted 🌿") }
             } catch (e: Exception) {
-                _ui.update { it.copy(placing = false, message = friendly(e)) }
+                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
             }
         }
     }
@@ -180,7 +181,7 @@ class GardenViewModel(
                 load()
                 _ui.update { it.copy(placing = false) }
             } catch (e: Exception) {
-                _ui.update { it.copy(placing = false, message = friendly(e)) }
+                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
             }
         }
     }
@@ -195,19 +196,20 @@ class GardenViewModel(
                 load()
                 _ui.update { it.copy(placing = false, message = "Dug up 🪴") }
             } catch (e: Exception) {
-                _ui.update { it.copy(placing = false, message = friendly(e)) }
+                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
             }
         }
     }
 
-    private fun friendly(e: Exception): String {
-        val m = e.message ?: return "Something went wrong"
-        return when {
-            "occupied" in m -> "That spot's already taken — try another."
-            "out of bounds" in m -> "That's outside the garden."
-            "do not own" in m -> "You don't own that seed yet."
-            else -> m.take(120)
-        }
+    /** Server errors raised on purpose by the garden RPCs; null means "use the fallback". */
+    private fun friendly(m: String): String? = when {
+        "occupied" in m -> "That spot's already taken — try another."
+        "out of bounds" in m -> "That's outside the garden."
+        "do not own" in m -> "You don't own that seed yet."
+        "daily entry cap" in m -> "That's all your thoughts for today. Come back tomorrow."
+        "insufficient coins" in m -> "Not enough coins yet — plant more kind thoughts."
+        "entry text required" in m -> "Write a few words first."
+        else -> null
     }
 
     fun consumeMessage() {

@@ -1,9 +1,9 @@
 package com.gratitudegarden.app.ui.auth
 
+import com.gratitudegarden.app.ui.OFFLINE_MESSAGE
+import com.gratitudegarden.app.ui.isOffline
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 import io.github.jan.supabase.auth.exception.AuthRestException
-import io.github.jan.supabase.exceptions.HttpRequestException
-import java.io.IOException
 
 /**
  * What the login and signup screens show when auth fails. Never the exception's own message:
@@ -12,13 +12,13 @@ import java.io.IOException
  */
 fun authErrorMessage(e: Throwable, fallback: String): String = authErrorMessage(
     code = (e as? AuthRestException)?.errorCode,
-    offline = e is HttpRequestException || e is IOException, // Ktor timeouts are IOExceptions
+    offline = isOffline(e),
     fallback = fallback,
 )
 
 /** The mapping itself, split out so it can be tested without building an HTTP response. */
 internal fun authErrorMessage(code: AuthErrorCode?, offline: Boolean, fallback: String): String = when {
-    offline -> "We can't reach the garden right now. Check your connection and try again."
+    offline -> OFFLINE_MESSAGE
     code == AuthErrorCode.InvalidCredentials -> "That email and password don't match."
     code == AuthErrorCode.EmailExists || code == AuthErrorCode.UserAlreadyExists ->
         "There's already a garden with that email. Try logging in instead."

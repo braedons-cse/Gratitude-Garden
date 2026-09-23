@@ -6,7 +6,7 @@ internal const val PASSWORD_MIN_LENGTH = 8
 /**
  * Mirrors the Supabase Auth password policy so the signup form can tell the user what is
  * wrong *while they type*, instead of letting them submit and surfacing a raw GoTrue error
- * string after a failed round trip (AuthViewModel maps `e.message` straight to the UI).
+ * message after a failed round trip.
  *
  * The server is the authority, not this function -- it is enabled in the Supabase dashboard
  * under Authentication -> Providers -> Email (minimum length 8, plus lowercase / uppercase /

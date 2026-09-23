@@ -8,6 +8,7 @@ import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.effectiveStreak
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,7 +73,7 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
                 )
             }
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, error = e.message ?: "Couldn't load your journal") }
+            _ui.update { it.copy(loading = false, error = e.toUserMessage("Couldn't load your journal")) }
         }
     }
 
@@ -127,14 +128,14 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
         if (newText.isBlank()) return
         viewModelScope.launch {
             try { repo.editEntry(id, newText.trim()); loadFirstPage() }
-            catch (e: Exception) { _ui.update { it.copy(error = e.message ?: "Couldn't edit") } }
+            catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) } }
         }
     }
 
     fun delete(id: String) {
         viewModelScope.launch {
             try { repo.deleteEntry(id); loadFirstPage() }
-            catch (e: Exception) { _ui.update { it.copy(error = e.message ?: "Couldn't delete") } }
+            catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't delete that entry")) } }
         }
     }
 

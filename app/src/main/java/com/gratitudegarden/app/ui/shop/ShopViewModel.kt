@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,7 +61,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
                 )
             }
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, message = friendly(e)) }
+            _ui.update { it.copy(loading = false, message = e.toUserMessage("Couldn't load the shop", ::friendly)) }
         }
     }
 
@@ -73,7 +74,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
                 load()
                 _ui.update { it.copy(busyItemId = null, message = "Bought ${item.name} 🌱") }
             } catch (e: Exception) {
-                _ui.update { it.copy(busyItemId = null, message = friendly(e)) }
+                _ui.update { it.copy(busyItemId = null, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
             }
         }
     }
@@ -91,7 +92,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
                     )
                 }
             } catch (e: Exception) {
-                _ui.update { it.copy(busyItemId = null, message = friendly(e)) }
+                _ui.update { it.copy(busyItemId = null, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
             }
         }
     }
@@ -100,13 +101,11 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
         if (_ui.value.message != null) _ui.update { it.copy(message = null) }
     }
 
-    private fun friendly(e: Exception): String {
-        val m = e.message ?: return "Something went wrong"
-        return when {
-            "insufficient coins" in m -> "Not enough coins yet — plant more kind thoughts."
-            "level" in m && "required" in m -> "You need a higher level to grow this seed."
-            else -> m.take(140)
-        }
+    /** Server errors raised on purpose by the shop RPCs; null means "use the fallback". */
+    private fun friendly(m: String): String? = when {
+        "insufficient coins" in m -> "Not enough coins yet — plant more kind thoughts."
+        "level" in m && "required" in m -> "You need a higher level to grow this seed."
+        else -> null
     }
 
     companion object {
