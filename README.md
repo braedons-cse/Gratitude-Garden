@@ -78,7 +78,9 @@ per unit of work.
   the subway. Add Room as the source of truth, render from it instantly, sync to Supabase
   in the background with a queue and conflict resolution. Also kills the loading spinners.
   Do this **first** in this tier: it gets harder with every feature layered onto the
-  current direct-to-network pattern.
+  current direct-to-network pattern. **Planned** in
+  [`docs/offline-first-plan.md`](docs/offline-first-plan.md): journal fully offline,
+  economy online-only, three phases.
 - **1.2 Home-screen widget + richer notifications — M.** The fastest path to a daily habit
   is not opening the app. A Glance widget showing the streak, today's plant, and a one-tap
   "add entry" field puts the loop on the home screen; notification actions (inline reply,
