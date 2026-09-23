@@ -66,6 +66,7 @@ import com.gratitudegarden.app.ui.theme.GgPrimary
 import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -431,8 +432,13 @@ private fun ConfirmDeleteDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 
 private val timeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 
-private fun timeOf(createdAt: String): String = try {
-    OffsetDateTime.parse(createdAt).toLocalTime().format(timeFmt)
+/**
+ * Wall-clock time of an entry in [zone]. `created_at` arrives from Postgres in UTC, and
+ * `OffsetDateTime.toLocalTime()` keeps that offset, so it must be moved to the device's zone
+ * first. The zone is a parameter so tests don't depend on where they run.
+ */
+internal fun timeOf(createdAt: String, zone: ZoneId = ZoneId.systemDefault()): String = try {
+    OffsetDateTime.parse(createdAt).atZoneSameInstant(zone).format(timeFmt)
 } catch (_: Exception) {
     ""
 }
