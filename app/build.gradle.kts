@@ -55,9 +55,23 @@ android {
         }
     }
 
+    // Upload key for Play. The keystore lives outside the repo; its path and passwords come
+    // from local.properties or the environment. Without them, release still builds, unsigned.
+    val uploadStoreFile = secret("UPLOAD_STORE_FILE")
+    val uploadSigning = if (uploadStoreFile.isNotEmpty()) {
+        signingConfigs.create("upload") {
+            storeFile = file(uploadStoreFile)
+            storePassword = secret("UPLOAD_STORE_PASSWORD")
+            keyAlias = secret("UPLOAD_KEY_ALIAS", "upload")
+            keyPassword = secret("UPLOAD_KEY_PASSWORD")
+        }
+    } else null
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            signingConfig = uploadSigning
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
