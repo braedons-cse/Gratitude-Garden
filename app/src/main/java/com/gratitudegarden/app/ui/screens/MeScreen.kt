@@ -143,19 +143,6 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
         context.startActivity(intent)
     }
 
-    // API 31+: send the user to the system "Alarms & reminders" special-access
-    // screen so they can grant exact-alarm timing. Reminders work without it (just
-    // less precise), so this is offered, not required.
-    fun openExactAlarmSettings() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val intent = Intent(
-                Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                Uri.fromParts("package", context.packageName, null),
-            )
-            context.startActivity(intent)
-        }
-    }
-
     // App info → Permissions, where the user can revoke a granted permission (an
     // app can't revoke its own permissions programmatically).
     fun openAppDetailsSettings() {
@@ -247,11 +234,9 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             hour = ui.reminderHour,
             minute = ui.reminderMinute,
             osEnabled = ui.osNotificationsEnabled,
-            exactPermitted = ui.exactAlarmPermitted,
             onToggle = { onToggleReminder(it) },
             onPickTime = { showTimePicker = true },
             onOpenOsSettings = { openOsNotificationSettings() },
-            onOpenExactAlarmSettings = { openExactAlarmSettings() },
         )
         Spacer(Modifier.height(16.dp))
 
@@ -394,11 +379,9 @@ private fun NotificationSettingsCard(
     hour: Int,
     minute: Int,
     osEnabled: Boolean,
-    exactPermitted: Boolean,
     onToggle: (Boolean) -> Unit,
     onPickTime: () -> Unit,
     onOpenOsSettings: () -> Unit,
-    onOpenExactAlarmSettings: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -483,24 +466,6 @@ private fun NotificationSettingsCard(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .clickable(onClick = onOpenOsSettings)
-                    .padding(vertical = 4.dp),
-            )
-        }
-
-        // Reminders still fire without exact-alarm access, just not to the minute.
-        // Offer the precise-timing opt-in when the OS has it switched off.
-        if (enabled && osEnabled && !exactPermitted) {
-            Text(
-                "Reminders may arrive a few minutes late. Tap to allow exact timing " +
-                    "in “Alarms & reminders”.",
-                fontFamily = Nunito,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.5.sp,
-                color = GgPrimaryDeep,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClick = onOpenExactAlarmSettings)
                     .padding(vertical = 4.dp),
             )
         }

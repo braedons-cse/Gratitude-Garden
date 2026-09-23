@@ -6,10 +6,6 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Android 13+ (API 33) requires a runtime grant to post notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- To-the-minute daily reminder. We check canScheduleExactAlarms() at runtime
-         and fall back to an inexact (but still Doze-proof) alarm when it's denied,
-         so we intentionally avoid the Play-restricted USE_EXACT_ALARM. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Re-arm the reminder after a reboot (AlarmManager alarms don't persist). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

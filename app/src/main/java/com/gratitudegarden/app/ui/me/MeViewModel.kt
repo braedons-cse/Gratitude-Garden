@@ -39,9 +39,6 @@ data class MeUiState(
     val osNotificationsEnabled: Boolean = true,
     // Whether the microphone runtime permission is currently granted.
     val micGranted: Boolean = false,
-    // Whether the OS grants exact-alarm access. When false, reminders still fire
-    // (inexactly), but we surface a hint offering to enable precise timing.
-    val exactAlarmPermitted: Boolean = true,
 )
 
 class MeViewModel(
@@ -82,7 +79,6 @@ class MeViewModel(
                     reminderMinute = reminder.minute,
                     osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
                     micGranted = micGranted(),
-                    exactAlarmPermitted = ReminderScheduler.canScheduleExact(appContext),
                 )
             }
         } catch (_: Exception) {
@@ -120,15 +116,14 @@ class MeViewModel(
     /**
      * Re-read the microphone + notification + exact-alarm permission state — call on
      * resume and after a permission request. [reconcileReminder] then turns the
-     * reminder off if notifications were revoked, or re-arms the alarm (picking up a
-     * newly granted/revoked exact-alarm access) so the reminder keeps firing.
+     * reminder off if notifications were revoked, or re-arms the alarm so the reminder
+     * keeps firing.
      */
     fun refreshPermissions() {
         _ui.update {
             it.copy(
                 osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
                 micGranted = micGranted(),
-                exactAlarmPermitted = ReminderScheduler.canScheduleExact(appContext),
             )
         }
         reconcileReminder()

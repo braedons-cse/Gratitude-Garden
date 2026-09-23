@@ -65,7 +65,7 @@ but disqualifying on a public store listing.
 | 0.5 | **Harden secrets and key handling** | S | ✅ **Done** — two coin-minting holes closed, then the policy audit found three more (a privilege escalation among them) and closed those too; see [Server-authoritative economy](#server-authoritative-economy) and [Client write surface](#client-write-surface). |
 | 0.6 | **Crash reporting and basic analytics** | S | Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
 | 0.7 | **Store listing assets** | M | Feature graphic, 4–8 phone screenshots (ideally a short video), 512px icon, short + full description, content rating questionnaire. The launcher icon is still the Android Studio template — that alone reads as "unfinished" in search results. Design work, routinely underestimated. |
-| 0.8 | **Notification & alarm permission posture** | S | We hold `SCHEDULE_EXACT_ALARM` with a documented inexact fallback. Play scrutinizes exact alarms and a daily journaling nudge is unlikely to qualify for an exemption. Move the reminder fully to WorkManager and drop the permission (and `RECEIVE_BOOT_COMPLETED` with it). Fewer sensitive permissions = smoother review. |
+| 0.8 | **Notification & alarm permission posture** | S | ✅ **Done** — `SCHEDULE_EXACT_ALARM` dropped; the reminder always uses the inexact, Doze-safe `setAndAllowWhileIdle`, and was watched firing and re-arming on an emulator. The WorkManager move was dropped on inspection: WorkManager declares `RECEIVE_BOOT_COMPLETED` itself (so it couldn't be removed), and Android defers its work hardest for rarely-opened apps, which are the users the nudge is for. *Original scope:* We held `SCHEDULE_EXACT_ALARM` with a documented inexact fallback. Play scrutinizes exact alarms and a daily journaling nudge is unlikely to qualify for an exemption. Move the reminder fully to WorkManager and drop the permission (and `RECEIVE_BOOT_COMPLETED` with it). Fewer sensitive permissions = smoother review. |
 
 ### Tier 1 — Retention features
 
@@ -172,7 +172,7 @@ These block or reshape the work above and should be settled before building.
 | Backend | Supabase Auth + PostgREST via `io.github.jan-tennert.supabase` (BOM `3.6.0`) over Ktor/OkHttp |
 | Serialization | `kotlinx.serialization` (partial DTOs, `ignoreUnknownKeys = true`) |
 | Local prefs | DataStore (reminder on/off + time-of-day) |
-| Reminders | `AlarmManager` + `BootReceiver` (planned move to WorkManager — see 0.8) |
+| Reminders | `AlarmManager` (inexact, Doze-safe) + `BootReceiver`; no exact-alarm permission |
 
 ---
 
@@ -472,11 +472,12 @@ The app sends a **daily reminder notification** to help users keep their streak 
 - **Scheduling — `AlarmManager`.** `ReminderScheduler` sets the daily alarm;
   `ReminderReceiver` posts the notification and re-arms for the next day. Because
   AlarmManager alarms are cleared on reboot, `BootReceiver` re-arms on `BOOT_COMPLETED`
-  and `MY_PACKAGE_REPLACED`. We check `canScheduleExactAlarms()` at runtime and fall back
-  to an inexact (still Doze-proof) alarm when it's denied, so we avoid the Play-restricted
-  `USE_EXACT_ALARM`. **Roadmap 0.8 replaces all of this with WorkManager** so the
-  `SCHEDULE_EXACT_ALARM` and `RECEIVE_BOOT_COMPLETED` permissions can be dropped before
-  store review.
+  and `MY_PACKAGE_REPLACED`. The alarm is deliberately **inexact**
+  (`setAndAllowWhileIdle`): it still wakes the device from Doze but may arrive a few
+  minutes late, so the app needs no `SCHEDULE_EXACT_ALARM` permission, which Play reviews
+  and Android 14+ denies to new installs by default. AlarmManager was kept over WorkManager on
+  purpose (roadmap 0.8): WorkManager is throttled hardest for rarely-opened apps, the users
+  a nudge is for, and it declares `RECEIVE_BOOT_COMPLETED` itself anyway.
 - **Persistence split:** reminder **preferences** (on/off + time) are stored on-device via
   DataStore; only the once-per-user **prompt flag** is stored in Supabase. Backend change:
   migration `add_notif_prompt_seen_to_user_settings`.

@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -19,12 +18,11 @@ import java.time.LocalTime
  * `...AndAllowWhileIdle` variants are the supported way to wake the device for a
  * user-facing, time-of-day notification even while idle.
  *
- * Exact vs. inexact: we use [AlarmManager.setExactAndAllowWhileIdle] when the OS
- * grants exact-alarm access (`canScheduleExactAlarms()`), otherwise we fall back to
- * the inexact [AlarmManager.setAndAllowWhileIdle] (still Doze-proof, just fires
- * within a maintenance window rather than to the minute). This keeps us clear of the
- * Play-restricted `USE_EXACT_ALARM` permission and never crashes when exact access
- * is denied.
+ * Inexact on purpose: [AlarmManager.setAndAllowWhileIdle] still wakes the device from
+ * Doze, it just lets the OS batch the alarm, so it can arrive a few minutes after the
+ * chosen time. A gratitude nudge doesn't need to-the-minute timing, and exact alarms
+ * need `SCHEDULE_EXACT_ALARM`, which Play reviews (roadmap 0.8) and Android 14+ denies
+ * to new installs by default anyway. So the app no longer asks for it.
  *
  * Reboot: AlarmManager alarms do NOT survive a restart, so [BootReceiver] re-arms
  * them on BOOT_COMPLETED. Callers also re-arm on app launch (see MeViewModel).
@@ -39,32 +37,12 @@ object ReminderScheduler {
         val triggerAtMillis = System.currentTimeMillis() + initialDelayMillis(hour, minute)
         val pending = firePendingIntent(context)
 
-        if (canScheduleExact(context)) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, triggerAtMillis, pending,
-            )
-        } else {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, triggerAtMillis, pending,
-            )
-        }
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pending)
     }
 
     fun cancel(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         alarmManager.cancel(firePendingIntent(context))
-    }
-
-    /**
-     * Whether the OS will let us set to-the-minute exact alarms. Always true below
-     * API 31 (no permission existed); on API 31+ it reflects the user's
-     * "Alarms & reminders" special-access grant. When false we still schedule — just
-     * inexactly — so reminders never silently stop.
-     */
-    fun canScheduleExact(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
-        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return false
-        return alarmManager.canScheduleExactAlarms()
     }
 
     private fun firePendingIntent(context: Context): PendingIntent {
