@@ -1,11 +1,13 @@
 package com.gratitudegarden.app.ui.auth
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.util.LogTags
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,7 +42,8 @@ class AuthViewModel(private val repo: GardenRepository) : ViewModel() {
                 block()
                 AuthUiState()
             } catch (e: Exception) {
-                AuthUiState(error = e.message?.takeIf { it.isNotBlank() } ?: fallback)
+                Log.w(LogTags.APP_LOGIC, fallback, e) // the full request detail stays in logcat
+                AuthUiState(error = authErrorMessage(e, fallback))
             }
         }
     }
