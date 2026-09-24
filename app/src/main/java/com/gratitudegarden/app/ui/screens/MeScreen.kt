@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -96,6 +97,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     var deleteStep by remember { mutableStateOf(0) }
     var password by remember { mutableStateOf("") }
     var showTimePicker by remember { mutableStateOf(false) }
+    var confirmLogOut by remember { mutableStateOf(false) }
 
     // Re-check the OS notification toggle whenever we come back to the foreground
     // (e.g. the user just toggled it in system settings).
@@ -262,7 +264,9 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
 
         PillButton(
             text = "Log out",
-            onClick = onSignOut,
+            // Logging out wipes this device's copy, queue included, so unsynced entries
+            // would be gone for good: ask first.
+            onClick = { if (ui.unsynced > 0) { vm.clearSyncFailed(); confirmLogOut = true } else onSignOut() },
             primary = false,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -283,6 +287,17 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                 .padding(vertical = 10.dp),
         )
         Spacer(Modifier.height(12.dp))
+    }
+
+    if (confirmLogOut) {
+        UnsyncedLogOutDialog(
+            unsynced = ui.unsynced,
+            syncing = ui.syncing,
+            syncFailed = ui.syncFailed,
+            onSyncNow = vm::syncNow,
+            onLogOut = { confirmLogOut = false; onSignOut() },
+            onDismiss = { confirmLogOut = false },
+        )
     }
 
     // Step 1 — confirm intent.
@@ -723,4 +738,55 @@ private fun StatCard(
         Text(text = value, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GgInk)
         Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
     }
+}
+
+/**
+ * Shown on "Log out" while journal changes are still queued. Once a "Sync now" empties the
+ * queue it says so and offers a plain log out.
+ */
+@Composable
+private fun UnsyncedLogOutDialog(
+    unsynced: Int,
+    syncing: Boolean,
+    syncFailed: Boolean,
+    onSyncNow: () -> Unit,
+    onLogOut: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val thoughts = if (unsynced == 1) "1 thought hasn't" else "$unsynced thoughts haven't"
+    val message = when {
+        syncing -> "Syncing…"
+        unsynced == 0 -> "Everything you wrote is safe in the garden."
+        syncFailed -> "Still can't reach the garden. $thoughts synced yet. " +
+            "Logging out now deletes ${if (unsynced == 1) "it" else "them"} from this phone for good."
+        else -> "$thoughts synced yet. Logging out now deletes ${if (unsynced == 1) "it" else "them"} " +
+            "from this phone for good."
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (unsynced == 0) "All synced" else "Not synced yet", fontFamily = Caprasimo, color = GgInk)
+        },
+        text = { Text(message, fontFamily = Nunito, color = GgInkSoft, modifier = Modifier.testTag("unsynced_logout_message")) },
+        confirmButton = {
+            if (unsynced == 0) {
+                TextButton(onClick = onLogOut) {
+                    Text("Log out", color = GgPrimary, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                TextButton(onClick = onSyncNow, enabled = !syncing) {
+                    Text("Sync now", color = GgPrimary, fontFamily = Nunito, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            if (unsynced == 0) {
+                TextButton(onClick = onDismiss) { Text("Cancel", color = GgInkSoft, fontFamily = Nunito) }
+            } else {
+                TextButton(onClick = onLogOut, enabled = !syncing) {
+                    Text("Log out anyway", color = GgAccent, fontFamily = Nunito)
+                }
+            }
+        },
+    )
 }

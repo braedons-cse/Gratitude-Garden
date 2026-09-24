@@ -40,6 +40,11 @@ data class MeUiState(
     val osNotificationsEnabled: Boolean = true,
     // Whether the microphone runtime permission is currently granted.
     val micGranted: Boolean = false,
+    /** Entries with changes the server hasn't confirmed; logging out would lose them. */
+    val unsynced: Int = 0,
+    val syncing: Boolean = false,
+    /** Set when a "Sync now" couldn't reach the server. */
+    val syncFailed: Boolean = false,
 )
 
 class MeViewModel(
@@ -64,6 +69,7 @@ class MeViewModel(
         showIn(_ui, repo.observeStats()) {
             copy(streak = it?.effectiveStreak ?: 0, totalEntries = it?.totalEntries ?: 0)
         }
+        showIn(_ui, repo.observeUnsyncedCount()) { copy(unsynced = it) }
         viewModelScope.launch { loadDeviceSettings() }
         // Reconcile the alarm on launch (NOT on every data change — see below).
         reconcileReminder()
@@ -153,6 +159,20 @@ class MeViewModel(
                 ReminderScheduler.schedule(appContext, hour, minute)
             }
         }
+    }
+
+    /** Deliver the queued journal changes now, from the log-out warning. */
+    fun syncNow() {
+        if (_ui.value.syncing) return
+        _ui.update { it.copy(syncing = true, syncFailed = false) }
+        viewModelScope.launch {
+            val delivered = runCatching { repo.drainOutbox() }.getOrDefault(false)
+            _ui.update { it.copy(syncing = false, syncFailed = !delivered) }
+        }
+    }
+
+    fun clearSyncFailed() {
+        if (_ui.value.syncFailed) _ui.update { it.copy(syncFailed = false) }
     }
 
     /**
