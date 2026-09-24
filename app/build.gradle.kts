@@ -131,6 +131,8 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    // GardenRepositoryTest: the real repository against a fake Supabase served by Ktor
+    androidTestImplementation(libs.ktor.client.mock)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

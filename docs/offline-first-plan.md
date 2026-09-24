@@ -1,7 +1,8 @@
 # Offline-first plan (roadmap 1.1)
 
-Status: **plan, not started.** Written 2026-09-23. Decisions below were made with the
-project owner; everything else is a default that can be revisited.
+Status: **phase 1 (read cache) done 2026-09-24; phases 2 and 3 not started.** Written
+2026-09-23. Decisions below were made with the project owner; everything else is a default
+that can be revisited. Where phase 1 departed from this plan, the section says so.
 
 ## Why now: what happens offline today
 
@@ -112,10 +113,14 @@ overloading it, then re-apply `revoke … from public, anon` and `grant … to a
 
 ## Client-side pieces beyond Room
 
-- **Auth while offline.** Today an offline launch stayed `Authenticated`, but supabase-kt
-  also has `RefreshFailure`, and `GardenApp` treats anything but `Authenticated` as
-  signed out. Treat `RefreshFailure` caused by the network as signed in (cached UI, writes
-  queue) and `Initializing` as a splash, never the login form.
+- **Auth while offline.** *(Done in phase 1, `AppSession`.)* supabase-kt only reports
+  `Authenticated` offline while the stored token is fresh. Within the last 20% of its
+  lifetime a failed refresh leaves it at `Initializing`; once expired, `RefreshFailure`;
+  and in both it reports no user. So: a stored session counts as signed in (user id read
+  from storage) in either state, `Initializing` with nothing stored is a blank splash, and
+  refreshes run only with a real token, again when one comes back. A refresh token the
+  server rejects makes the library clear the session, which signs out. Verified on the
+  emulator by rewriting the stored `expiresAt` offline.
 - **Sign-out wipes Room.** It's this user's journal on a possibly shared device. If the
   outbox isn't empty, warn with the count ("2 thoughts haven't synced yet") and offer
   *Sync now* / *Sign out anyway*.
@@ -132,7 +137,7 @@ overloading it, then re-apply `revoke … from public, anon` and `grant … to a
 
 | Phase | Size | Delivers | Done when |
 | --- | --- | --- | --- |
-| **1. Read cache** | M | Room + entities, repositories write-through, ViewModels observe Flows, reconnect refresh, auth-state handling, backup exclusions | Airplane-mode cold start shows the real garden and journal; reconnecting refreshes without user action |
+| **1. Read cache** ✅ | M | Room + entities, repositories write-through, ViewModels observe Flows, reconnect refresh, auth-state handling, backup exclusions | Airplane-mode cold start shows the real garden and journal; reconnecting refreshes without user action |
 | **2. Offline journal** | M | Outbox, client UUIDs, `SyncWorker`, the server migration above, pending UI, sign-out guard | Entries written offline across midnight sync to the right days with correct streak and coins; replaying the queue twice changes nothing |
 | **3. Polish** | S | Offline banner, economy disabled states, failed-op UI | Every screen behaves sensibly offline with nothing misleading |
 

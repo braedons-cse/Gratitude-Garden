@@ -50,6 +50,8 @@ supabase-bom = { group = "io.github.jan-tennert.supabase", name = "bom", version
 supabase-auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
 supabase-postgrest = { group = "io.github.jan-tennert.supabase", name = "postgrest-kt" }
 ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.ref = "ktor" }
+# Tests only: a fake Supabase for the repository tests (androidTest)
+ktor-client-mock = { group = "io.ktor", name = "ktor-client-mock", version.ref = "ktor" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
