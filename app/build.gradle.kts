@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
 }
 
 // Read Supabase keys from local.properties (gitignored) so they aren't committed.
@@ -88,6 +90,12 @@ android {
     }
 }
 
+// Room writes each schema version here so migrations can be tested against the real history.
+// Committed on purpose: once a version ships, its JSON must never change.
+room {
+    schemaDirectory("$projectDir/schemas")
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -106,6 +114,11 @@ dependencies {
     // Daily reminder: AlarmManager schedules the notification (see ReminderScheduler);
     // DataStore stores the on-device reminder preferences (enabled + time-of-day).
     implementation(libs.androidx.datastore.preferences)
+
+    // Room: the on-device copy of the user's data that every screen reads from
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     // Supabase (auth + postgrest) over Ktor, using kotlinx-serialization
     implementation(platform(libs.supabase.bom))

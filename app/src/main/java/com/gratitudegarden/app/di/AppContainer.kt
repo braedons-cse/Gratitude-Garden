@@ -3,6 +3,7 @@ package com.gratitudegarden.app.di
 import android.content.Context
 import com.gratitudegarden.app.BuildConfig
 import com.gratitudegarden.app.data.GardenRepository
+import com.gratitudegarden.app.data.local.GardenDatabase
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
@@ -12,10 +13,10 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.Json
 
 /**
- * Manual service locator. Holds the singleton [SupabaseClient] (Auth + Postgrest)
- * and the [GardenRepository] built on top of it.
+ * Manual service locator. Holds the singleton [SupabaseClient] (Auth + Postgrest),
+ * the local [GardenDatabase], and the [GardenRepository].
  */
-class AppContainer(@Suppress("unused") private val context: Context) {
+class AppContainer(private val context: Context) {
 
     // Not private: the staging flavor builds its admin repository on this same client.
     val supabase: SupabaseClient = createSupabaseClient(
@@ -32,6 +33,9 @@ class AppContainer(@Suppress("unused") private val context: Context) {
         install(Auth)        // session persisted automatically (SettingsSessionManager)
         install(Postgrest)
     }
+
+    // Lazy so the file isn't opened until a repository first needs it.
+    val database: GardenDatabase by lazy { GardenDatabase.create(context) }
 
     val gardenRepository: GardenRepository by lazy { GardenRepository(supabase) }
 }
