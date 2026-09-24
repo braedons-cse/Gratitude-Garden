@@ -2,9 +2,14 @@ package com.gratitudegarden.app.data
 
 import android.util.Log
 import androidx.room.withTransaction
+import com.gratitudegarden.app.data.local.EntryEntity
 import com.gratitudegarden.app.data.local.GardenDatabase
+import com.gratitudegarden.app.data.local.OutboxOp
+import com.gratitudegarden.app.data.local.OutboxType
 import com.gratitudegarden.app.data.local.SettingsEntity
 import com.gratitudegarden.app.data.local.SyncCursorEntity
+import com.gratitudegarden.app.data.local.SyncState
+import com.gratitudegarden.app.data.local.epochMicros
 import com.gratitudegarden.app.data.local.toEntity
 import com.gratitudegarden.app.data.local.toRow
 import com.gratitudegarden.app.util.LogTags
@@ -12,8 +17,10 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -39,8 +46,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
@@ -58,13 +67,28 @@ data class GratitudeEntry(
     val id: String,
     @SerialName("entry_text") val entryText: String,
     @SerialName("input_method") val inputMethod: String,
-    @SerialName("coins_awarded") val coinsAwarded: Int,
+    /** Null while the entry waits to sync: the server decides the reward. */
+    @SerialName("coins_awarded") val coinsAwarded: Int? = null,
     @SerialName("entry_date") val entryDate: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
     /** Read only by the entry sync, as its cursor; not stored locally. */
     @SerialName("updated_at") val updatedAt: String? = null,
+    /** Local only: whether the server has this version yet. */
+    @Transient val syncState: SyncState = SyncState.SYNCED,
 )
+
+/** What became of a submitted entry. In every case it is in the journal. */
+sealed interface SubmitResult {
+    /** The server has it. [coins] is null only if its reply couldn't be read. */
+    data class Planted(val coins: Int?) : SubmitResult
+
+    /** Saved on the device; it goes to the server once it can. */
+    data object Saved : SubmitResult
+
+    /** The server turned it down, for [reason]; the entry is kept, marked failed. */
+    data class Refused(val reason: String) : SubmitResult
+}
 
 @Serializable
 data class Garden(
@@ -161,8 +185,9 @@ data class Item(
 private data class InventoryRow(@SerialName("item_id") val itemId: String)
 
 @Serializable
-private data class NotifPromptRow(
+private data class SettingsRow(
     @SerialName("notif_prompt_seen") val notifPromptSeen: Boolean = false,
+    @SerialName("daily_entry_cap") val dailyEntryCap: Int? = null,
 )
 
 /**
@@ -178,6 +203,7 @@ class GardenRepository(
     private val client: SupabaseClient,
     private val db: GardenDatabase,
     connectivity: ConnectivityMonitor,
+    private val outboxScheduler: OutboxScheduler = OutboxScheduler.None,
 ) {
 
     // Refreshes run here rather than in the caller's scope: one started by a screen that
@@ -217,6 +243,19 @@ class GardenRepository(
     private val gardenLock = Mutex()
     private val catalogLock = Mutex()
     private val entriesLock = Mutex()
+
+    // One delivery of the journal outbox at a time, so ops go out in order.
+    private val outboxLock = Mutex()
+
+    // Local journal writes, and the delivery claiming the op it is about to send. Held
+    // only around Room, never across a network call.
+    private val localLock = Mutex()
+
+    /**
+     * The op being sent right now, or null. A local write never folds a change into it:
+     * the request has already left with the old contents.
+     */
+    @Volatile private var inFlight: Long? = null
 
     // ── Auth ─────────────────────────────────────────────────────────
     // Signing in or up starts from an empty database: whatever is left belongs to a
@@ -274,6 +313,7 @@ class GardenRepository(
      * the emptied tables.
      */
     private suspend fun clearLocal() {
+        outboxScheduler.cancel()
         scope.coroutineContext.job.children.forEach { it.cancelAndJoin() }
         lastFullRefreshAt = null
         withContext(Dispatchers.IO) { db.clearAllTables() }
@@ -346,6 +386,12 @@ class GardenRepository(
             db.entryDao().observeCountOn(uid, today)
         }
 
+    /** Entries per day that earn coins: the server's `daily_entry_cap`, clamped as it clamps it. */
+    fun observeDailyCap(): Flow<Int> =
+        ofUser(SettingsEntity.DEFAULT_DAILY_CAP) { uid ->
+            db.accountDao().observeSettings(uid).map { it?.dailyEntryCap ?: SettingsEntity.DEFAULT_DAILY_CAP }
+        }
+
     /**
      * True once the enable-reminders prompt has been shown (accepted or declined). Read
      * from the local copy of `user_settings`; until that has been fetched, answers true,
@@ -377,6 +423,7 @@ class GardenRepository(
                 client.auth.sessionStatus.map { it is SessionStatus.Authenticated }.becameTrue(),
             ).collect {
                 try {
+                    drainOutbox()
                     refreshAll()
                 } catch (e: Exception) {
                     Log.w(LogTags.APP_LOGIC, "Automatic refresh failed", e)
@@ -429,7 +476,7 @@ class GardenRepository(
                 val profileQ = async { fetchOwnRow<ProfileRow>("profiles", uid, idColumn = "id") }
                 val walletQ = async { fetchOwnRow<WalletRow>("coin_wallets", uid) }
                 val statsQ = async { fetchOwnRow<UserStatsRow>("user_stats", uid) }
-                val settingsQ = async { fetchOwnRow<NotifPromptRow>("user_settings", uid) }
+                val settingsQ = async { fetchOwnRow<SettingsRow>("user_settings", uid) }
                 val profile = profileQ.await()
                 val wallet = walletQ.await()
                 val stats = statsQ.await()
@@ -438,7 +485,11 @@ class GardenRepository(
                     profile?.let { db.accountDao().upsertProfile(it.toEntity(uid)) }
                     wallet?.let { db.accountDao().upsertWallet(it.toEntity(uid)) }
                     stats?.let { db.statsDao().upsert(it.toEntity(uid)) }
-                    settings?.let { db.accountDao().upsertSettings(SettingsEntity(uid, it.notifPromptSeen)) }
+                    settings?.let {
+                        db.accountDao().upsertSettings(
+                            SettingsEntity(uid, it.notifPromptSeen, SettingsEntity.clampCap(it.dailyEntryCap)),
+                        )
+                    }
                 }
             }
         }
@@ -521,7 +572,12 @@ class GardenRepository(
                 val last = batch.last()
                 val next = SyncCursorEntity(key, updatedAt = checkNotNull(last.updatedAt), lastId = last.id)
                 db.withTransaction {
-                    db.entryDao().upsertAll(batch.map { it.toEntity(uid) })
+                    // An entry with a change still queued keeps its local version: the
+                    // server's is older, and the outbox writes the answer back when it
+                    // delivers. Checked inside the transaction, so a local write can't
+                    // slip in between the check and the upsert.
+                    val queued = db.outboxDao().pendingEntryIds().toSet()
+                    db.entryDao().upsertAll(batch.filter { it.id !in queued }.map { it.toEntity(uid) })
                     db.syncCursorDao().put(next)
                 }
                 cursor = next
@@ -544,55 +600,230 @@ class GardenRepository(
         }
     }
 
-    // ── Gratitude entries (RPCs) ─────────────────────────────────────
-    // rpc() takes a JsonObject of the function's named args.
+    // ── Gratitude entries (local first, then the outbox) ─────────────
+    // A journal write lands in Room at once and queues an op; drainOutbox() delivers the
+    // queue in order, now if it can and otherwise from WorkManager once there's a network
+    // (docs/offline-first-plan.md, phase 2). Nothing typed is lost to a failed request.
+
     /**
-     * Plant a gratitude entry.
+     * Write a gratitude entry. It is in the journal immediately, and delivered straight
+     * away when the server can be reached within [SUBMIT_WAIT].
      *
-     * The coin reward is decided **server-side** — it varies with the user's
-     * streak and how substantive the entry is — so it is never sent from here.
-     * The anon key ships in the APK, so anything the client names as a reward is
-     * really just a suggestion an attacker can rewrite.
+     * The coin reward is decided **server-side**: it varies with the streak and how
+     * substantive the entry is, so nothing here names an amount. The anon key ships in the
+     * APK, so anything the client names as a reward is really just a suggestion an
+     * attacker can rewrite.
      *
-     * Returns the coins actually awarded, or null if the reply couldn't be
-     * decoded. The entry saves either way, and the refreshed wallet shows the
-     * new balance regardless, so a null only costs the "+N" in the
-     * confirmation toast.
+     * The day's cap is checked here too, against the mirrored `daily_entry_cap`, so an
+     * entry past it is refused now rather than written offline and refused at sync.
      */
-    suspend fun submitEntry(text: String, voice: Boolean): Int? {
-        val result = client.postgrest.rpc(
-            "submit_gratitude_entry",
-            buildJsonObject {
-                // The id is ours, so a retried submit is recognised rather than paid twice.
-                put("p_id", UUID.randomUUID().toString())
-                put("p_written_at", Instant.now().toString())
-                put("p_entry_text", text)
-                put("p_input_method", if (voice) "voice_to_text" else "text")
-                // The server dates the entry in this zone (local day, not UTC day).
-                put("p_time_zone", ZoneId.systemDefault().id)
-            },
-        )
-        afterWrite(::syncEntries, ::refreshAccount)
-        return runCatching { result.decodeAs<GratitudeEntry>().coinsAwarded }.getOrNull()
+    suspend fun submitEntry(text: String, voice: Boolean): SubmitResult {
+        val uid = currentUid() ?: throw IllegalStateException("Not signed in.")
+        val id = UUID.randomUUID().toString()
+        val now = Instant.now()
+        val zone = ZoneId.systemDefault()
+        val day = entryDay(now, zone).toString()
+        val inputMethod = if (voice) "voice_to_text" else "text"
+        val writtenAt = now.toString()
+        localLock.withLock {
+            db.withTransaction {
+                val cap = SettingsEntity.clampCap(db.accountDao().getSettings(uid)?.dailyEntryCap)
+                // Same wording as the server's error, so the screens map it the same way.
+                if (db.entryDao().countOn(uid, day) >= cap) throw IllegalStateException("daily entry cap ($cap) reached")
+                db.entryDao().upsert(
+                    EntryEntity(
+                        id = id,
+                        userId = uid,
+                        entryText = text,
+                        inputMethod = inputMethod,
+                        coinsAwarded = null,
+                        entryDate = day,
+                        createdAt = writtenAt,
+                        createdAtMicros = epochMicros(writtenAt),
+                        deletedAt = null,
+                        syncState = SyncState.PENDING,
+                    ),
+                )
+                db.outboxDao().insert(
+                    OutboxOp(
+                        userId = uid,
+                        type = OutboxType.SUBMIT,
+                        entryId = id,
+                        text = text,
+                        inputMethod = inputMethod,
+                        timeZone = zone.id,
+                        writtenAt = writtenAt,
+                    ),
+                )
+            }
+        }
+        outboxScheduler.schedule()
+        // Delivery runs in [scope], so running out of patience here only stops the waiting.
+        withTimeoutOrNull(SUBMIT_WAIT) { runCatching { drainOutbox() } }
+        currentCoroutineContext().ensureActive()
+        val entry = db.entryDao().get(id)
+        return when (entry?.syncState) {
+            SyncState.SYNCED -> SubmitResult.Planted(entry.coinsAwarded)
+            SyncState.FAILED -> SubmitResult.Refused(entry.syncError.orEmpty())
+            else -> SubmitResult.Saved
+        }
     }
 
+    /**
+     * Change an entry's text. A change still waiting in the queue is rewritten rather than
+     * followed by another, so the server sees one request with the final text.
+     */
     suspend fun editEntry(id: String, newText: String) {
-        client.postgrest.rpc(
-            "edit_gratitude_entry",
-            buildJsonObject {
-                put("p_entry_id", id)
-                put("p_new_text", newText)
-            },
-        )
-        afterWrite(::syncEntries)
+        val uid = currentUid() ?: return
+        localLock.withLock {
+            db.withTransaction {
+                val waiting = db.outboxDao().opsFor(id).lastOrNull()?.takeIf { it.seq != inFlight }
+                if (waiting != null && waiting.type != OutboxType.DELETE) {
+                    db.outboxDao().setText(waiting.seq, newText)
+                } else {
+                    db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = newText))
+                }
+                db.entryDao().setText(id, newText, SyncState.PENDING)
+            }
+        }
+        deliverSoon()
     }
 
+    /**
+     * Delete an entry. One the server hasn't received yet is dropped with its queue and
+     * never sent at all; otherwise it is hidden now and the delete is queued.
+     */
     suspend fun deleteEntry(id: String) {
-        client.postgrest.rpc(
-            "delete_gratitude_entry",
-            buildJsonObject { put("p_entry_id", id) },
-        )
-        afterWrite(::syncEntries, ::refreshAccount)
+        val uid = currentUid() ?: return
+        localLock.withLock {
+            db.withTransaction {
+                val waiting = db.outboxDao().opsFor(id).filter { it.seq != inFlight }
+                if (waiting.any { it.type == OutboxType.SUBMIT }) {
+                    db.outboxDao().deleteFor(id)
+                    db.entryDao().hardDelete(id)
+                } else {
+                    // Queued edits of it are moot now.
+                    waiting.filter { it.type == OutboxType.EDIT }.forEach { db.outboxDao().delete(it.seq) }
+                    db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.DELETE, entryId = id))
+                    db.entryDao().markDeleted(id, Instant.now().toString(), SyncState.PENDING)
+                }
+            }
+        }
+        deliverSoon()
+    }
+
+    /** How many entries have changes the server hasn't confirmed; sign-out warns about them. */
+    fun observeUnsyncedCount(): Flow<Int> =
+        ofUser(0) { uid -> db.outboxDao().observePendingEntries(uid) }
+
+    /** Try now, and leave WorkManager to retry if now doesn't work out. */
+    private fun deliverSoon() {
+        outboxScheduler.schedule()
+        scope.launch {
+            try {
+                drainOutbox()
+            } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                Log.w(LogTags.APP_LOGIC, "Journal delivery failed", e)
+            }
+        }
+    }
+
+    /**
+     * Send the queued journal changes, oldest first, until the queue is empty or the server
+     * can't be reached. Returns false when something is left for a later retry.
+     *
+     * Every op is safe to repeat (see [OutboxOp]), so a request whose answer is lost just
+     * stays queued and goes again. An op the server refuses outright, such as text it
+     * rejects, is dropped along with the entry's later ops, and the entry is marked
+     * [SyncState.FAILED] with its text kept; the ops behind it go on.
+     *
+     * Runs in [scope] whoever asks, so sign-out cancels it before wiping the tables and it
+     * can't write the previous user's entries back.
+     */
+    suspend fun drainOutbox(): Boolean = scope.async { outboxLock.withLock { drainLocked() } }.await()
+
+    private suspend fun drainLocked(): Boolean {
+        val uid = currentUid() ?: return true // signed out: the queue went with the data
+        if (!hasToken()) return db.outboxDao().size() == 0
+        var delivered = false
+        while (true) {
+            val op = localLock.withLock { db.outboxDao().head(uid)?.also { inFlight = it.seq } } ?: break
+            try {
+                val row = send(op)
+                // entriesLock: an entry sync that read the old row mid-flight finishes first,
+                // so it can't write that row back over this answer.
+                entriesLock.withLock {
+                    localLock.withLock { db.withTransaction { recordDelivered(op, uid, row) } }
+                }
+                delivered = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (isTransient(e)) {
+                    db.outboxDao().recordAttempt(op.seq, e.javaClass.simpleName)
+                    return false
+                }
+                val reason = (e as? RestException)?.error ?: e.message.orEmpty()
+                Log.w(LogTags.APP_LOGIC, "Server refused a queued ${op.type}: $reason")
+                localLock.withLock {
+                    db.withTransaction {
+                        db.outboxDao().deleteFor(op.entryId)
+                        db.entryDao().setSyncState(op.entryId, SyncState.FAILED, reason)
+                    }
+                }
+            } finally {
+                inFlight = null
+            }
+        }
+        if (delivered) afterWrite(::syncEntries, ::refreshAccount)
+        return true
+    }
+
+    /** The server's copy of the entry, or null for a delete or a reply that didn't decode. */
+    private suspend fun send(op: OutboxOp): GratitudeEntry? {
+        // rpc() takes a JsonObject of the function's named args.
+        val result = when (op.type) {
+            OutboxType.SUBMIT -> client.postgrest.rpc(
+                "submit_gratitude_entry",
+                buildJsonObject {
+                    put("p_id", op.entryId)
+                    put("p_entry_text", op.text)
+                    put("p_input_method", op.inputMethod)
+                    // The day is the entry's local date where and when it was written.
+                    put("p_time_zone", op.timeZone)
+                    put("p_written_at", op.writtenAt)
+                },
+            )
+            OutboxType.EDIT -> client.postgrest.rpc(
+                "edit_gratitude_entry",
+                buildJsonObject {
+                    put("p_entry_id", op.entryId)
+                    put("p_new_text", op.text)
+                },
+            )
+            OutboxType.DELETE -> {
+                client.postgrest.rpc("delete_gratitude_entry", buildJsonObject { put("p_entry_id", op.entryId) })
+                return null
+            }
+        }
+        return runCatching { result.decodeAs<GratitudeEntry>() }.getOrNull()
+    }
+
+    private suspend fun recordDelivered(op: OutboxOp, uid: String, row: GratitudeEntry?) {
+        db.outboxDao().delete(op.seq)
+        val moreQueued = db.outboxDao().opsFor(op.entryId).isNotEmpty()
+        when {
+            // Later changes are still on their way: take what only the server knows and
+            // keep the local text.
+            moreQueued -> if (row != null) {
+                db.entryDao().setServerFields(row.id, row.coinsAwarded, row.entryDate, row.createdAt, epochMicros(row.createdAt))
+            }
+            row != null -> db.entryDao().upsert(row.toEntity(uid))
+            // A delete, or an answer we couldn't read: the next entry sync brings the
+            // server's copy, which nothing now holds back.
+            else -> db.entryDao().setSyncState(op.entryId, SyncState.SYNCED)
+        }
     }
 
     // ── Notification prompt flag (Supabase-backed, per-user) ─────────
@@ -613,7 +844,7 @@ class GardenRepository(
         // the local guard just avoids a pointless round trip when signed out.
         val uid = currentUid() ?: return
         client.postgrest.rpc("mark_notif_prompt_seen")
-        db.accountDao().upsertSettings(SettingsEntity(uid, notifPromptSeen = true))
+        db.accountDao().markNotifPromptSeen(uid)
     }
 
     // ── Shop / inventory / garden interactions ───────────────────────
@@ -688,5 +919,20 @@ class GardenRepository(
 
         /** Rows per request in the entry sync. PostgREST on Supabase caps a response at 1000. */
         const val SYNC_BATCH = 500
+
+        /**
+         * How long a submit waits to be delivered before reporting it saved instead. It is
+         * delivered all the same; this only bounds the "Planting…" spinner.
+         */
+        val SUBMIT_WAIT = 8.seconds
+
+        /**
+         * Worth retrying: an expired or not-yet-refreshed token, a timeout, rate limiting,
+         * the server's own trouble. Any other refusal will be refused again.
+         */
+        fun isTransient(e: Throwable): Boolean = when (e) {
+            is RestException -> e.statusCode in setOf(401, 403, 408, 429) || e.statusCode >= 500
+            else -> true // no connection, timeouts, and anything unrecognised
+        }
     }
 }

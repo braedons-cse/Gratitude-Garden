@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenPlantRow
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
+import com.gratitudegarden.app.data.SubmitResult
 import com.gratitudegarden.app.data.effectiveStreak
 import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
@@ -70,6 +71,7 @@ class GardenViewModel(
         showIn(_ui, repo.observeCatalog()) { copy(itemSlugs = it.associate { item -> item.id to item.slug }) }
         showIn(_ui, ownedSeeds()) { copy(ownedSeeds = it) }
         showIn(_ui, repo.observeEntriesTodayCount()) { copy(usedToday = it) }
+        showIn(_ui, repo.observeDailyCap()) { copy(dailyCap = it) }
         refresh()
     }
 
@@ -97,11 +99,17 @@ class GardenViewModel(
         _ui.update { it.copy(submitting = true) }
         viewModelScope.launch {
             try {
-                val awarded = repo.submitEntry(text.trim(), voice)
-                // The server decides the reward, so the toast reports what was
-                // actually awarded rather than promising a fixed number.
-                val note = if (awarded != null) "+$awarded coins · " else ""
-                _ui.update { it.copy(submitting = false, message = "${note}a kind thought planted 🌱") }
+                val message = when (val result = repo.submitEntry(text.trim(), voice)) {
+                    // The server decides the reward, so the toast reports what was
+                    // actually awarded rather than promising a fixed number.
+                    is SubmitResult.Planted -> {
+                        val note = if (result.coins != null) "+${result.coins} coins · " else ""
+                        "${note}a kind thought planted 🌱"
+                    }
+                    SubmitResult.Saved -> "Saved in your journal. It'll be planted as soon as it syncs."
+                    is SubmitResult.Refused -> friendly(result.reason) ?: "The garden couldn't take that thought."
+                }
+                _ui.update { it.copy(submitting = false, message = message) }
                 maybeOfferReminders()
             } catch (e: Exception) {
                 _ui.update { it.copy(submitting = false, message = e.toUserMessage("Couldn't save your thought", ::friendly)) }

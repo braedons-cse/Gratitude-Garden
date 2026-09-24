@@ -40,7 +40,19 @@ fun WalletEntity.toRow() = WalletRow(balance)
 data class SettingsEntity(
     @PrimaryKey val userId: String,
     val notifPromptSeen: Boolean,
-)
+    /**
+     * Entries per day that earn coins, as `submit_gratitude_entry` reads it (already
+     * clamped). Mirrored so an entry written offline is refused here rather than at sync.
+     */
+    val dailyEntryCap: Int = DEFAULT_DAILY_CAP,
+) {
+    companion object {
+        const val DEFAULT_DAILY_CAP = 10
+
+        /** The server's `least(coalesce(daily_entry_cap, 10), 50)`. */
+        fun clampCap(cap: Int?): Int = minOf(cap ?: DEFAULT_DAILY_CAP, 50)
+    }
+}
 
 @Dao
 interface AccountDao {
@@ -59,6 +71,12 @@ interface AccountDao {
     @Query("SELECT * FROM user_settings WHERE userId = :userId")
     fun observeSettings(userId: String): Flow<SettingsEntity?>
 
+    @Query("SELECT * FROM user_settings WHERE userId = :userId")
+    suspend fun getSettings(userId: String): SettingsEntity?
+
     @Upsert
     suspend fun upsertSettings(settings: SettingsEntity)
+
+    @Query("UPDATE user_settings SET notifPromptSeen = 1 WHERE userId = :userId")
+    suspend fun markNotifPromptSeen(userId: String)
 }

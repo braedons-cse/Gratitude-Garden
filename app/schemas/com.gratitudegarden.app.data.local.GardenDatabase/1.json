@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "1e8dfc9fd1b6c3bd71c8cb37d4f01be6",
+    "identityHash": "c6b3cb59eeda7c01d31cdff94cc12734",
     "entities": [
       {
         "tableName": "profile",
@@ -72,7 +72,7 @@
       },
       {
         "tableName": "user_settings",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`userId` TEXT NOT NULL, `notifPromptSeen` INTEGER NOT NULL, PRIMARY KEY(`userId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`userId` TEXT NOT NULL, `notifPromptSeen` INTEGER NOT NULL, `dailyEntryCap` INTEGER NOT NULL, PRIMARY KEY(`userId`))",
         "fields": [
           {
             "fieldPath": "userId",
@@ -83,6 +83,12 @@
           {
             "fieldPath": "notifPromptSeen",
             "columnName": "notifPromptSeen",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dailyEntryCap",
+            "columnName": "dailyEntryCap",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -346,7 +352,7 @@
       },
       {
         "tableName": "gratitude_entries",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `entryText` TEXT NOT NULL, `inputMethod` TEXT NOT NULL, `coinsAwarded` INTEGER NOT NULL, `entryDate` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `createdAtMicros` INTEGER NOT NULL, `deletedAt` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `entryText` TEXT NOT NULL, `inputMethod` TEXT NOT NULL, `coinsAwarded` INTEGER, `entryDate` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `createdAtMicros` INTEGER NOT NULL, `deletedAt` TEXT, `syncState` TEXT NOT NULL, `syncError` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -375,8 +381,7 @@
           {
             "fieldPath": "coinsAwarded",
             "columnName": "coinsAwarded",
-            "affinity": "INTEGER",
-            "notNull": true
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "entryDate",
@@ -399,6 +404,17 @@
           {
             "fieldPath": "deletedAt",
             "columnName": "deletedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "syncState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncError",
+            "columnName": "syncError",
             "affinity": "TEXT"
           }
         ],
@@ -460,11 +476,98 @@
             "key"
           ]
         }
+      },
+      {
+        "tableName": "outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `userId` TEXT NOT NULL, `type` TEXT NOT NULL, `entryId` TEXT NOT NULL, `text` TEXT, `inputMethod` TEXT, `timeZone` TEXT, `writtenAt` TEXT, `attempts` INTEGER NOT NULL, `lastError` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "seq",
+            "columnName": "seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryId",
+            "columnName": "entryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "inputMethod",
+            "columnName": "inputMethod",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "timeZone",
+            "columnName": "timeZone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "writtenAt",
+            "columnName": "writtenAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_userId",
+            "unique": false,
+            "columnNames": [
+              "userId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_userId` ON `${TABLE_NAME}` (`userId`)"
+          },
+          {
+            "name": "index_outbox_entryId",
+            "unique": false,
+            "columnNames": [
+              "entryId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_entryId` ON `${TABLE_NAME}` (`entryId`)"
+          }
+        ]
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1e8dfc9fd1b6c3bd71c8cb37d4f01be6')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c6b3cb59eeda7c01d31cdff94cc12734')"
     ]
   }
 }

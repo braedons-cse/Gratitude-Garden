@@ -6,7 +6,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.gratitudegarden.app.data.AppSession
 import com.gratitudegarden.app.data.ConnectivityMonitor
 import com.gratitudegarden.app.data.GardenRepository
+import com.gratitudegarden.app.data.SubmitResult
 import com.gratitudegarden.app.data.local.GardenDatabase
+import com.gratitudegarden.app.data.local.SyncState
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.MemorySessionManager
@@ -166,6 +168,7 @@ class GardenRepositoryTest {
         signIn()
 
         repo.deleteEntry("e00002")
+        repo.drainOutbox()
 
         assertEquals(listOf("e00001", "e00000"), repo.observeEntries(10).first().map { it.id })
         // The daily cap counts deleted entries: they were paid for.
@@ -219,5 +222,196 @@ class GardenRepositoryTest {
         assertNull(db.gardenDao().observeGarden(fake.userId).first())
         assertNull(db.accountDao().observeWallet(fake.userId).first())
         assertEquals(0, db.itemDao().observeCatalog().first().size)
+    }
+
+    // ── The outbox: journal writes that work offline ───────────────────
+
+    private suspend fun journal() = repo.observeEntries(100).first()
+
+    @Test
+    fun anEntryWrittenOfflineIsInTheJournalAtOnce() = runBlocking {
+        signIn()
+        fake.offline = true
+
+        val result = repo.submitEntry("the smell of rain", voice = false)
+
+        assertEquals(SubmitResult.Saved, result)
+        val entry = journal().single()
+        assertEquals("the smell of rain", entry.entryText)
+        assertEquals(SyncState.PENDING, entry.syncState)
+        assertNull("the server decides the reward", entry.coinsAwarded)
+        assertEquals(1, repo.observeEntriesTodayCount().first())
+        assertEquals(1, repo.observeUnsyncedCount().first())
+    }
+
+    @Test
+    fun reconnectingDeliversWhatWasWrittenOffline() = runBlocking {
+        signIn()
+        fake.offline = true
+        repo.submitEntry("the smell of rain", voice = false)
+        fake.offline = false
+        fake.requests.clear()
+
+        assertTrue(repo.drainOutbox())
+
+        val entry = journal().single()
+        assertEquals(SyncState.SYNCED, entry.syncState)
+        assertEquals(5, entry.coinsAwarded)
+        assertEquals(entry.id, fake.entries.single().id)
+        assertEquals(1, fake.rpcCalls("submit_gratitude_entry").size)
+        assertEquals(0, repo.observeUnsyncedCount().first())
+        assertEquals("the reward reached the wallet", 17, repo.observeWallet().first()?.balance)
+    }
+
+    @Test
+    fun onlineAnEntryIsPlantedStraightAway() = runBlocking {
+        signIn()
+
+        assertEquals(SubmitResult.Planted(5), repo.submitEntry("a good friend", voice = false))
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun editingAQueuedEntrySendsOneSubmitWithTheFinalText() = runBlocking {
+        signIn()
+        fake.offline = true
+        repo.submitEntry("first draft", voice = false)
+        val id = journal().single().id
+        repo.editEntry(id, "second draft")
+        repo.editEntry(id, "final words")
+        assertEquals("final words", journal().single().entryText)
+        fake.offline = false
+        fake.requests.clear()
+
+        repo.drainOutbox()
+
+        assertEquals(1, fake.rpcCalls("submit_gratitude_entry").size)
+        assertEquals(0, fake.rpcCalls("edit_gratitude_entry").size)
+        assertEquals("final words", fake.entries.single().text)
+    }
+
+    @Test
+    fun deletingAQueuedEntrySendsNothing() = runBlocking {
+        signIn()
+        fake.offline = true
+        repo.submitEntry("never mind", voice = false)
+        repo.deleteEntry(journal().single().id)
+        fake.offline = false
+        fake.requests.clear()
+
+        repo.drainOutbox()
+
+        assertEquals(0, fake.rpcCalls().size)
+        assertTrue(fake.entries.isEmpty())
+        assertTrue(journal().isEmpty())
+        assertEquals("the server never saw it, so neither does the cap", 0, repo.observeEntriesTodayCount().first())
+    }
+
+    @Test
+    fun aLostResponseIsReplayedAndPaidOnce() = runBlocking {
+        signIn()
+        fake.dropResponses = true
+
+        // The server saves and pays; the answer never arrives.
+        assertEquals(SubmitResult.Saved, repo.submitEntry("worth it twice?", voice = false))
+        assertEquals(1, fake.paidSubmits)
+        fake.dropResponses = false
+
+        assertTrue(repo.drainOutbox())
+
+        assertEquals(1, fake.entries.size)
+        assertEquals("the replay was recognised, not paid again", 1, fake.paidSubmits)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun replayingTheWholeQueueTwiceChangesNothing() = runBlocking {
+        fake.addEntries(2)
+        signIn()
+        fake.offline = true
+        repo.submitEntry("new one", voice = false)
+        repo.editEntry("e00000", "edited offline")
+        repo.deleteEntry("e00001")
+        fake.offline = false
+        fake.requests.clear()
+        // Each op is carried out, its answer lost, and sent again: the queue goes out twice.
+        fake.loseEachFirstAnswer = true
+        while (!repo.drainOutbox()) Unit
+
+        assertEquals(2, fake.rpcCalls("submit_gratitude_entry").size)
+        assertEquals(2, fake.rpcCalls("edit_gratitude_entry").size)
+        assertEquals(2, fake.rpcCalls("delete_gratitude_entry").size)
+        assertEquals(1, fake.paidSubmits)
+        assertEquals(3, fake.entries.size)
+        assertEquals("edited offline", fake.entries.first { it.id == "e00000" }.text)
+        assertTrue(fake.entries.first { it.id == "e00001" }.deletedAt != null)
+        assertEquals(listOf(SyncState.SYNCED, SyncState.SYNCED), journal().map { it.syncState })
+        assertEquals(0, repo.observeUnsyncedCount().first())
+    }
+
+    @Test
+    fun aSyncDuringAQueuedEditKeepsTheLocalText() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        fake.rpcsFail = true
+        repo.editEntry("e00000", "written on the plane")
+        // Meanwhile the server's copy changes and a refresh reads it.
+        fake.edit("e00000", "older, from the tablet")
+        repo.refreshAll(force = true)
+
+        assertEquals("written on the plane", journal().single().entryText)
+
+        fake.rpcsFail = false
+        repo.drainOutbox()
+        assertEquals("written on the plane", fake.entries.single().text)
+        assertEquals("written on the plane", journal().single().entryText)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun aRefusedEntryIsKeptAndTheQueueMovesOn() = runBlocking {
+        signIn()
+        fake.offline = true
+        fake.refuseText = "rejected"
+        repo.submitEntry("this gets rejected", voice = false)
+        repo.submitEntry("this one is fine", voice = false)
+        fake.offline = false
+
+        assertTrue(repo.drainOutbox())
+
+        val refused = journal().first { it.entryText == "this gets rejected" }
+        assertEquals(SyncState.FAILED, refused.syncState)
+        assertEquals("entry text required", db.entryDao().get(refused.id)?.syncError)
+        assertEquals(SyncState.SYNCED, journal().first { it.entryText == "this one is fine" }.syncState)
+        assertEquals(0, repo.observeUnsyncedCount().first())
+    }
+
+    @Test
+    fun theDailyCapIsCheckedOnTheDevice() = runBlocking {
+        fake.dailyCap = 2
+        signIn()
+        fake.offline = true
+        repo.submitEntry("one", voice = false)
+        repo.submitEntry("two", voice = false)
+
+        try {
+            repo.submitEntry("three", voice = false)
+            fail("the third entry is over the cap")
+        } catch (e: IllegalStateException) {
+            assertEquals("daily entry cap (2) reached", e.message)
+        }
+        assertEquals(2, journal().size)
+    }
+
+    @Test
+    fun signingOutDropsTheQueue() = runBlocking {
+        signIn()
+        fake.rpcsFail = true
+        repo.submitEntry("not yet synced", voice = false)
+        assertEquals(1, repo.observeUnsyncedCount().first())
+
+        repo.signOut()
+
+        assertEquals(0, db.outboxDao().size())
     }
 }

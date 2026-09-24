@@ -3,17 +3,21 @@ package com.gratitudegarden.app
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
+import io.ktor.client.request.HttpResponseData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Parameters
 import io.ktor.http.headersOf
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -25,7 +29,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * It answers only what GardenRepository asks for, for one user, and implements just enough
  * of PostgREST to be honest about the entry sync: `limit`, ordering by `(updated_at, id)`,
- * and the `or=(updated_at.gt.X,and(updated_at.eq.X,id.gt.Y))` cursor.
+ * and the `or=(updated_at.gt.X,and(updated_at.eq.X,id.gt.Y))` cursor. The journal RPCs
+ * behave like the real ones where the outbox depends on it: a submit is recognised by its
+ * id and paid once, and a repeated delete succeeds.
  */
 class FakeSupabase {
     val userId = "u1"
@@ -36,8 +42,26 @@ class FakeSupabase {
     /** Throw an IOException for every request, like a phone in airplane mode. */
     @Volatile var offline = false
 
+    /** Throw an IOException for RPCs only; table reads still work. */
+    @Volatile var rpcsFail = false
+
+    /** Carry out each RPC, then lose the response: the client sees an IOException. */
+    @Volatile var dropResponses = false
+
+    /** Lose only the first answer to each distinct RPC call, so each is carried out twice. */
+    @Volatile var loseEachFirstAnswer = false
+    private val answersLost = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** Refuse any submit or edit whose text contains this, as the server refuses bad text. */
+    @Volatile var refuseText: String? = null
+
     /** Delay every response, so overlapping refreshes really overlap. */
     @Volatile var latencyMs = 0L
+
+    var dailyCap = 10
+
+    /** Submits that inserted a row and paid for it; a replay must not add one. */
+    @Volatile var paidSubmits = 0
 
     var displayName = "Tester"
     var balance = 12
@@ -55,6 +79,7 @@ class FakeSupabase {
         val createdAt: String,
         var updatedAt: String,
         var deletedAt: String? = null,
+        val coins: Int = 5,
     )
 
     /** Add [count] entries dated today; ids and timestamps ascend. */
@@ -74,20 +99,81 @@ class FakeSupabase {
 
     fun requestsTo(table: String) = requests.filter { it.contains("/rest/v1/$table?") || it.endsWith("/rest/v1/$table") }
 
+    /** Calls to the RPC [name], or to any RPC. */
+    fun rpcCalls(name: String = "") = requests.filter { it.contains("/rest/v1/rpc/$name") }
+
     val engine = MockEngine { request ->
         val path = request.url.encodedPath
         requests += "${request.method.value} $path?${request.url.encodedQuery}"
         if (latencyMs > 0) delay(latencyMs)
         if (offline) throw IOException("offline")
+        if (rpcsFail && path.startsWith("/rest/v1/rpc/")) throw IOException("offline")
+
+        val args = if (path.startsWith("/rest/v1/rpc/")) {
+            Json.parseToJsonElement(request.body.toByteArray().decodeToString()).jsonObject
+        } else {
+            JsonObject(emptyMap())
+        }
+        fun arg(name: String) = args[name]?.jsonPrimitive?.contentOrNull
+
+        // Respond, unless the answer is being lost: then the work is done and the reply isn't.
+        fun reply(content: String, status: HttpStatusCode = HttpStatusCode.OK): HttpResponseData {
+            val call = "$path ${arg("p_id") ?: arg("p_entry_id")}"
+            if (dropResponses || (loseEachFirstAnswer && answersLost.add(call))) throw IOException("response lost")
+            return respond(content, status, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
 
         when {
             path == "/auth/v1/logout" -> respond("", HttpStatusCode.NoContent)
+            path == "/rest/v1/rpc/submit_gratitude_entry" -> {
+                val id = arg("p_id")!!
+                val text = arg("p_entry_text")!!
+                val existing = entries.firstOrNull { it.id == id }
+                when {
+                    existing != null -> reply(json(existing)) // a replay: the first row, unpaid
+                    refused(text) -> reply(error("entry text required"), HttpStatusCode.BadRequest)
+                    else -> {
+                        val writtenAt = Instant.parse(arg("p_written_at")!!)
+                        val entry = Entry(
+                            id = id,
+                            text = text,
+                            entryDate = writtenAt.atZone(ZoneId.of(arg("p_time_zone")!!)).toLocalDate().toString(),
+                            createdAt = format.format(writtenAt),
+                            updatedAt = nextStamp(),
+                        )
+                        entries += entry
+                        balance += entry.coins
+                        paidSubmits++
+                        reply(json(entry))
+                    }
+                }
+            }
+            path == "/rest/v1/rpc/edit_gratitude_entry" -> {
+                val text = arg("p_new_text")!!
+                val entry = entries.firstOrNull { it.id == arg("p_entry_id") && it.deletedAt == null }
+                when {
+                    entry == null -> reply(error("entry not found"), HttpStatusCode.BadRequest)
+                    refused(text) -> reply(error("entry text required"), HttpStatusCode.BadRequest)
+                    else -> {
+                        entry.text = text
+                        entry.updatedAt = nextStamp()
+                        reply(json(entry))
+                    }
+                }
+            }
             path == "/rest/v1/rpc/delete_gratitude_entry" -> {
-                val body = Json.parseToJsonElement(request.body.toByteArray().decodeToString()).jsonObject
-                val id = body.getValue("p_entry_id").jsonPrimitive.content
-                val stamp = nextStamp()
-                entries.first { it.id == id }.apply { deletedAt = stamp; updatedAt = stamp }
-                respond("", HttpStatusCode.NoContent)
+                val entry = entries.firstOrNull { it.id == arg("p_entry_id") }
+                if (entry == null) {
+                    reply(error("entry not found"), HttpStatusCode.BadRequest)
+                } else {
+                    // Deleting a deleted entry succeeds and changes nothing.
+                    if (entry.deletedAt == null) {
+                        val stamp = nextStamp()
+                        entry.deletedAt = stamp
+                        entry.updatedAt = stamp
+                    }
+                    reply("", HttpStatusCode.NoContent)
+                }
             }
             path.startsWith("/rest/v1/") -> respond(
                 content = table(path.removePrefix("/rest/v1/"), request.url.parameters),
@@ -102,7 +188,7 @@ class FakeSupabase {
         "profiles" -> """[{"display_name":"$displayName","level":1,"xp":0,"is_admin":false}]"""
         "coin_wallets" -> """[{"balance":$balance}]"""
         "user_stats" -> """[{"total_entries":${entries.count { it.deletedAt == null }},"current_streak":2,"longest_streak":5,"last_entry_date":"$today"}]"""
-        "user_settings" -> """[{"notif_prompt_seen":false}]"""
+        "user_settings" -> """[{"notif_prompt_seen":false,"daily_entry_cap":$dailyCap}]"""
         "gardens" -> gardenName?.let { """[{"id":"g1","name":"$it","grid_rows":6,"grid_cols":5}]""" } ?: "[]"
         "garden_plants" -> plantIds.mapIndexed { i, id ->
             """{"id":"$id","item_id":"i1","grid_x":$i,"grid_y":0,"growth_stage":"seedling","health":"healthy"}"""
@@ -130,12 +216,20 @@ class FakeSupabase {
             rows = rows.filter { if (op == "gte") it.updatedAt >= at else it.updatedAt > at }
         }
         params["limit"]?.toInt()?.let { rows = rows.take(it) }
-        return rows.joinToString(",", "[", "]") { e ->
-            """{"id":"${e.id}","entry_text":"${e.text}","input_method":"text","coins_awarded":5,""" +
-                """"entry_date":"${e.entryDate}","created_at":"${e.createdAt}","updated_at":"${e.updatedAt}",""" +
-                """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"}}"""
-        }
+        return rows.joinToString(",", "[", "]") { json(it) }
     }
+
+    private fun json(e: Entry) =
+        """{"id":"${e.id}","entry_text":"${e.text}","input_method":"text","coins_awarded":${e.coins},""" +
+            """"entry_date":"${e.entryDate}","created_at":"${e.createdAt}","updated_at":"${e.updatedAt}",""" +
+            """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"}}"""
+
+    private fun refused(text: String) = refuseText?.let { it in text } == true
+
+    /** A PostgREST error body, as for a `raise exception` in an RPC. */
+    private fun error(message: String) =
+        """{"code":"P0001","message":"$message","details":null,"hint":null}"""
+
 
     private var clock = 1_000_000L
     private fun nextStamp() = stamp(clock++)

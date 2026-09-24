@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,6 +45,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gratitudegarden.app.data.GratitudeEntry
+import com.gratitudegarden.app.data.local.SyncState
 import com.gratitudegarden.app.util.LogComposableLifecycle
 import com.gratitudegarden.app.util.LogTags
 import com.gratitudegarden.app.ui.components.PillButton
@@ -57,6 +59,7 @@ import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
 import com.gratitudegarden.app.ui.theme.GgAccent
+import com.gratitudegarden.app.ui.theme.GgAccentDeep
 import com.gratitudegarden.app.ui.theme.GgBgSage
 import com.gratitudegarden.app.ui.theme.GgInk
 import com.gratitudegarden.app.ui.theme.GgInkMuted
@@ -288,17 +291,36 @@ private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
                 if (entry.inputMethod == "voice_to_text") {
                     GgIcon(name = GgIconName.Mic, color = GgPrimary, size = 12.dp)
                 }
-                CoinIcon(size = 12.dp)
-                Text(
-                    text = "+${entry.coinsAwarded}",
-                    fontFamily = Nunito,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.5.sp,
-                    color = GgPrimary,
-                )
+                when (entry.syncState) {
+                    // The server decides the reward, so there's no amount until it answers.
+                    SyncState.PENDING -> SyncNote("waiting to sync", GgInkMuted)
+                    SyncState.FAILED -> SyncNote("couldn't sync", GgAccentDeep)
+                    SyncState.SYNCED -> {
+                        CoinIcon(size = 12.dp)
+                        Text(
+                            text = "+${entry.coinsAwarded ?: 0}",
+                            fontFamily = Nunito,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp,
+                            color = GgPrimary,
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SyncNote(text: String, color: Color) {
+    Text(
+        text = text,
+        fontFamily = Nunito,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.5.sp,
+        color = color,
+        modifier = Modifier.testTag("entry_sync_note"),
+    )
 }
 
 @Composable

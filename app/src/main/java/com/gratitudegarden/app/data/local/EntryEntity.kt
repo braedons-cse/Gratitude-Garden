@@ -13,6 +13,13 @@ import java.time.OffsetDateTime
 import java.time.temporal.ChronoUnit
 
 /**
+ * Where a journal entry stands with the server. Entries written on the device start
+ * [PENDING] and become [SYNCED] once the outbox delivers them; one the server refuses
+ * (the text, the cap) is [FAILED] and keeps its text.
+ */
+enum class SyncState { SYNCED, PENDING, FAILED }
+
+/**
  * A journal entry, soft-deleted ones included: the daily cap counts deleted entries
  * (they were paid for), so the local count has to see them too.
  */
@@ -25,13 +32,15 @@ data class EntryEntity(
     val userId: String,
     val entryText: String,
     val inputMethod: String,
-    val coinsAwarded: Int,
-    /** Local day the server dated the entry, `yyyy-MM-dd`. */
-    val entryDate: String,
+    /** Null until the server has answered: it decides the reward. */
+    val coinsAwarded: Int?,
     /**
-     * The server's timestamp verbatim. Kept for display, and because keyset paging sends
-     * it back as the cursor, which has to match to the microsecond.
+     * Local day the entry counts for, `yyyy-MM-dd`. For an entry still [SyncState.PENDING],
+     * the day predicted on the device ([com.gratitudegarden.app.data.entryDay]); the
+     * server's answer replaces it.
      */
+    val entryDate: String,
+    /** When the entry was written, ISO-8601 with an offset. The server keeps the same instant. */
     val createdAt: String,
     /**
      * [createdAt] as microseconds since the epoch, for ordering. Sorting the strings only
@@ -40,6 +49,9 @@ data class EntryEntity(
      */
     val createdAtMicros: Long,
     val deletedAt: String?,
+    val syncState: SyncState = SyncState.SYNCED,
+    /** Why the server refused it, when [syncState] is [SyncState.FAILED]. */
+    val syncError: String? = null,
 )
 
 fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
@@ -55,7 +67,7 @@ fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
 )
 
 fun EntryEntity.toRow() =
-    GratitudeEntry(id, entryText, inputMethod, coinsAwarded, entryDate, createdAt, deletedAt)
+    GratitudeEntry(id, entryText, inputMethod, coinsAwarded, entryDate, createdAt, deletedAt, syncState = syncState)
 
 /** Microseconds since the epoch for an ISO-8601 timestamp with an offset. */
 internal fun epochMicros(timestamp: String): Long =
@@ -83,4 +95,36 @@ interface EntryDao {
 
     @Upsert
     suspend fun upsertAll(entries: List<EntryEntity>)
+
+    @Upsert
+    suspend fun upsert(entry: EntryEntity)
+
+    @Query("SELECT * FROM gratitude_entries WHERE id = :id")
+    suspend fun get(id: String): EntryEntity?
+
+    @Query("SELECT COUNT(*) FROM gratitude_entries WHERE userId = :userId AND entryDate = :day")
+    suspend fun countOn(userId: String, day: String): Int
+
+    @Query("UPDATE gratitude_entries SET entryText = :text, syncState = :state WHERE id = :id")
+    suspend fun setText(id: String, text: String, state: SyncState)
+
+    @Query("UPDATE gratitude_entries SET deletedAt = :deletedAt, syncState = :state WHERE id = :id")
+    suspend fun markDeleted(id: String, deletedAt: String, state: SyncState)
+
+    @Query("UPDATE gratitude_entries SET syncState = :state, syncError = :error WHERE id = :id")
+    suspend fun setSyncState(id: String, state: SyncState, error: String? = null)
+
+    /**
+     * What the server decided about an entry that still has local changes queued behind
+     * the one it just answered: the reward, the day, the time. The text stays local.
+     */
+    @Query(
+        "UPDATE gratitude_entries SET coinsAwarded = :coins, entryDate = :day, " +
+            "createdAt = :createdAt, createdAtMicros = :createdAtMicros WHERE id = :id"
+    )
+    suspend fun setServerFields(id: String, coins: Int?, day: String, createdAt: String, createdAtMicros: Long)
+
+    /** An entry that never reached the server, deleted before it could. */
+    @Query("DELETE FROM gratitude_entries WHERE id = :id")
+    suspend fun hardDelete(id: String)
 }
