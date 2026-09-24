@@ -14,12 +14,26 @@ import androidx.room.RoomDatabase
  * migration, and the shipped JSON files must never be edited.
  */
 @Database(
-    entities = [StatsEntity::class],
+    entities = [
+        ProfileEntity::class,
+        WalletEntity::class,
+        SettingsEntity::class,
+        StatsEntity::class,
+        GardenEntity::class,
+        PlantEntity::class,
+        ItemEntity::class,
+        InventoryEntity::class,
+        EntryEntity::class,
+    ],
     version = 1,
     exportSchema = true,
 )
 abstract class GardenDatabase : RoomDatabase() {
+    abstract fun accountDao(): AccountDao
     abstract fun statsDao(): StatsDao
+    abstract fun gardenDao(): GardenDao
+    abstract fun itemDao(): ItemDao
+    abstract fun entryDao(): EntryDao
 
     companion object {
         const val FILE_NAME = "garden.db"
