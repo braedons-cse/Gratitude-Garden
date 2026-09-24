@@ -1,6 +1,6 @@
 package com.gratitudegarden.app
 
-import com.gratitudegarden.app.data.reconnections
+import com.gratitudegarden.app.data.becameTrue
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
@@ -8,14 +8,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * [reconnections] — when the repository refreshes because the network came back.
+ * [becameTrue] — when the repository refreshes because the network came back (or a valid
+ * token did).
  *
  * Starting online must not count (the screens refresh on creation anyway), and the
  * repeated `true`s a network callback sends as capabilities change must not refresh again.
  */
-class ReconnectionsTest {
+class BecameTrueTest {
 
-    private fun count(vararg states: Boolean) = runBlocking { flowOf(*states.toTypedArray()).reconnections().toList().size }
+    private fun count(vararg states: Boolean) = runBlocking { flowOf(*states.toTypedArray()).becameTrue().toList().size }
 
     @Test
     fun startingOnlineIsNotAReconnection() {

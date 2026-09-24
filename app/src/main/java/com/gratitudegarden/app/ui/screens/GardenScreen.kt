@@ -129,6 +129,8 @@ fun GardenRoute(
     LogComposableLifecycle(LogTags.GARDEN_SCREEN)
     val vm: GardenViewModel = viewModel(factory = GardenViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // Blank for the moment before Room's first read, instead of "My Garden, 0 coins".
+    if (ui.loading) return
     GardenScreen(
         ui = ui,
         onSubmit = { text, voice -> vm.submit(text, voice) },

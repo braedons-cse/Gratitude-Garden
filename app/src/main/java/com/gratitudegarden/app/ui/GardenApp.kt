@@ -30,6 +30,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.gratitudegarden.app.data.AppSession
 import com.gratitudegarden.app.ui.admin.AdminTools
 import com.gratitudegarden.app.ui.auth.AuthViewModel
 import com.gratitudegarden.app.ui.components.BottomNav
@@ -44,7 +45,6 @@ import com.gratitudegarden.app.ui.theme.GratitudeGardenTheme
 import com.gratitudegarden.app.ui.theme.GgBgSage
 import com.gratitudegarden.app.util.LogComposableLifecycle
 import com.gratitudegarden.app.util.LogTags
-import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
@@ -52,18 +52,23 @@ import kotlin.math.absoluteValue
 fun GratitudeGardenApp() {
     GratitudeGardenTheme {
         val authVm: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
-        val status by authVm.sessionStatus.collectAsStateWithLifecycle()
+        val session by authVm.session.collectAsStateWithLifecycle()
 
         Surface(modifier = Modifier.fillMaxSize(), color = GgBgSage) {
-            if (status is SessionStatus.Authenticated) {
-                // Scope the tab/admin ViewModels to this session so they're evicted on
-                // sign-out — otherwise the next user inherits this user's cached state.
-                val userId = (status as SessionStatus.Authenticated).session.user?.id
-                SessionScope(userId) {
-                    HomeScaffold(onSignOut = authVm::signOut)
+            when (val s = session) {
+                // The stored session is still being read: the plain background, briefly,
+                // rather than a login form that would flash up for a signed-in user.
+                AppSession.Loading -> Unit
+                AppSession.SignedOut -> AuthNav(authVm = authVm)
+                // Signed in includes offline with an expired token: the cached garden, not
+                // the login form (see appSessionFor).
+                is AppSession.SignedIn -> {
+                    // Scope the tab/admin ViewModels to this session so they're evicted on
+                    // sign-out — otherwise the next user inherits this user's cached state.
+                    SessionScope(s.userId) {
+                        HomeScaffold(onSignOut = authVm::signOut)
+                    }
                 }
-            } else {
-                AuthNav(authVm = authVm)
             }
         }
     }

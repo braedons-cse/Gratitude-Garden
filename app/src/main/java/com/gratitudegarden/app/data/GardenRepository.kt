@@ -25,11 +25,15 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -177,12 +181,36 @@ class GardenRepository(
     connectivity: ConnectivityMonitor,
 ) {
 
-    val sessionStatus: StateFlow<SessionStatus> get() = client.auth.sessionStatus
-
     // Refreshes run here rather than in the caller's scope: one started by a screen that
     // then goes away still finishes, and sign-out can cancel all of them before it wipes
     // the tables, so none can write the previous user's rows back afterwards.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // Long-lived watchers (the session, refresh triggers). Separate from [scope] because
+    // sign-out cancels everything in [scope], and these must keep running across it.
+    private val watchScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Whose data to show. Unlike the auth library's status, a stored session that can't be
+     * refreshed right now (offline, token expired) still counts as signed in; see
+     * [appSessionFor].
+     */
+    val session: StateFlow<AppSession> = client.auth.sessionStatus
+        .mapLatest { status ->
+            val retrying = status is SessionStatus.Initializing || status is SessionStatus.RefreshFailure
+            appSessionFor(status, if (retrying) storedUserId() else null)
+        }
+        .stateIn(watchScope, SharingStarted.Eagerly, AppSession.Loading)
+
+    private suspend fun storedUserId(): String? =
+        client.auth.sessionManager.loadSessionOrNull()?.userId()
+
+    /**
+     * Whether requests go out with the user's own token. Without one (initializing, or the
+     * refresh is failing) they'd carry only the anon key. RLS would refuse them today, but
+     * the cache shouldn't depend on that: a refresh that came back empty would wipe it.
+     */
+    private fun hasToken(): Boolean = client.auth.sessionStatus.value is SessionStatus.Authenticated
 
     // One refresh of each group of tables at a time. Two overlapping fetches of the same
     // rows could finish out of order and leave the older copy in Room.
@@ -255,8 +283,9 @@ class GardenRepository(
     // ── Reads (Room) ─────────────────────────────────────────────────
     // Every read is scoped to the signed-in user, captured when the flow is created. The
     // screens' ViewModels live inside a per-session scope (SessionScope), so a flow never
-    // outlives the user it was made for.
-    private fun currentUid(): String? = client.auth.currentUserOrNull()?.id
+    // outlives the user it was made for. The user comes from [session], not the auth
+    // library, which reports no user at all while a token refresh is failing.
+    private fun currentUid(): String? = (session.value as? AppSession.SignedIn)?.userId
 
     private inline fun <T> ofUser(signedOut: T, flow: (String) -> Flow<T>): Flow<T> =
         currentUid()?.let(flow) ?: flowOf(signedOut)
@@ -342,15 +371,19 @@ class GardenRepository(
     @Volatile private var lastFullRefreshAt: TimeMark? = null
 
     init {
-        // Coming back online refreshes on its own, so a screen that loaded offline doesn't
-        // stay stale until the user writes something or restarts the app. This runs in a
-        // scope of its own: sign-out cancels [scope]'s refreshes, but must not stop this.
-        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            connectivity.isOnline.reconnections().collect {
+        // Refresh on its own when the network comes back or the auth library gets a valid
+        // token again, so a screen that loaded offline doesn't stay stale until the user
+        // writes something or restarts the app. Both are needed: after a reconnect the
+        // token may still be expired, and the refresh waits for the second trigger.
+        watchScope.launch {
+            merge(
+                connectivity.isOnline.becameTrue(),
+                client.auth.sessionStatus.map { it is SessionStatus.Authenticated }.becameTrue(),
+            ).collect {
                 try {
                     refreshAll()
                 } catch (e: Exception) {
-                    Log.w(LogTags.APP_LOGIC, "Refresh after reconnecting failed", e)
+                    Log.w(LogTags.APP_LOGIC, "Automatic refresh failed", e)
                 }
             }
         }
@@ -377,6 +410,8 @@ class GardenRepository(
 
     private suspend fun refreshEverything() {
         val uid = currentUid() ?: return
+        // Skipped rather than failed: the refresh below runs once the token is back.
+        if (!hasToken()) return
         coroutineScope {
             launch { refreshAccount(uid) }
             launch { refreshGarden(uid) }
@@ -505,6 +540,7 @@ class GardenRepository(
      */
     private suspend fun afterWrite(vararg refreshes: suspend (String) -> Unit) {
         val uid = currentUid() ?: return
+        if (!hasToken()) return
         try {
             scope.async { coroutineScope { refreshes.forEach { r -> launch { r(uid) } } } }.await()
         } catch (e: Exception) {

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class GardenUiState(
+    /** True until Room's first read; the screen stays blank rather than show defaults. */
     val loading: Boolean = true,
     val displayName: String = "",
     val gardenName: String = "My Garden",
@@ -59,6 +60,7 @@ class GardenViewModel(
         showIn(_ui, repo.observeStats()) { copy(streak = it?.effectiveStreak ?: 0) }
         showIn(_ui, repo.observeGarden()) {
             copy(
+                loading = false,
                 gardenName = it?.name ?: "My Garden",
                 gridRows = it?.gridRows ?: 6,
                 gridCols = it?.gridCols ?: 5,
@@ -87,7 +89,6 @@ class GardenViewModel(
             } catch (e: Exception) {
                 _ui.update { it.copy(message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
             }
-            _ui.update { it.copy(loading = false) }
         }
     }
 

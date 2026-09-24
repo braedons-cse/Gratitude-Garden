@@ -46,8 +46,8 @@ class ConnectivityMonitor(context: Context) {
 }
 
 /**
- * Emits once each time this goes from offline to online. The starting value doesn't count:
- * starting online is not a reconnection.
+ * Emits once each time this goes from false to true: coming back online, or regaining a
+ * valid token. The starting value doesn't count, so starting online is not a reconnection.
  */
-fun Flow<Boolean>.reconnections(): Flow<Unit> =
+fun Flow<Boolean>.becameTrue(): Flow<Unit> =
     distinctUntilChanged().drop(1).filter { it }.map { }

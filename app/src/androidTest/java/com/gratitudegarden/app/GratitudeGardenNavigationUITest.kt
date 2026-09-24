@@ -2,6 +2,7 @@ package com.gratitudegarden.app
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
@@ -16,6 +17,16 @@ class GratitudeGardenNavigationUITest {
 
     @get:Rule
     val composeTestRule = createAndroidComposeRule<MainActivity>()
+
+    // The app shows a blank splash until the auth library has read the stored session,
+    // off the main thread where Compose's idling can't see it. Wait for the login form.
+    // Assumes a signed-out install, as both tests always have.
+    @Before
+    fun waitForLogin() {
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule.onAllNodesWithText("Welcome back").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
     // UI test #1
     @Test

@@ -5,10 +5,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.gratitudegarden.app.data.AppSession
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.util.LogTags
-import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,7 +18,7 @@ data class AuthUiState(val loading: Boolean = false, val error: String? = null)
 
 class AuthViewModel(private val repo: GardenRepository) : ViewModel() {
 
-    val sessionStatus: StateFlow<SessionStatus> = repo.sessionStatus
+    val session: StateFlow<AppSession> = repo.session
 
     private val _ui = MutableStateFlow(AuthUiState())
     val ui: StateFlow<AuthUiState> = _ui.asStateFlow()
