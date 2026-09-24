@@ -43,8 +43,10 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -116,20 +118,17 @@ fun UserStatsRow.effectiveStreakOn(today: LocalDate): Int {
     val last = lastEntryDate
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         ?: return 0
-    // One day ahead is legitimate: the server never dates an entry before the previous one,
-    // so after a zone change (or the move off UTC days) the last entry can sit on tomorrow.
+    // One day ahead is legitimate: an entry is dated in the zone it was written in, so after
+    // flying west the last entry can sit on what is still tomorrow here.
     return if (last >= today.minusDays(1) && last <= today.plusDays(1)) currentStreak else 0
 }
 
 /**
- * The day the server will date the next entry: the local date, but never earlier than the
- * previous entry. Mirrors `greatest((now() at time zone tz)::date, last_entry_date)` in
- * `submit_gratitude_entry`, which keeps a zone change from reopening a finished day.
+ * The day an entry written at [writtenAt] counts for: its local date in [zone]. Mirrors
+ * `(v_written at time zone v_tz)::date` in `submit_gratitude_entry`, which trusts the write
+ * time sent with a queued entry, so one written offline before midnight keeps its day.
  */
-fun entryDay(localToday: LocalDate, lastEntryDate: String?): LocalDate {
-    val last = lastEntryDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return localToday
-    return maxOf(localToday, last)
-}
+fun entryDay(writtenAt: Instant, zone: ZoneId): LocalDate = writtenAt.atZone(zone).toLocalDate()
 
 val UserStatsRow.effectiveStreak: Int
     get() = effectiveStreakOn(LocalDate.now())
@@ -339,15 +338,12 @@ class GardenRepository(
      * refunding the coins, so a deleted entry has still been paid for. The entry sync
      * keeps deleted rows for exactly this reason.
      *
-     * "Today" is [entryDay], the same day `submit_gratitude_entry` will date the next
-     * entry, so it moves with the stats' `lastEntryDate`.
+     * "Today" is [entryDay] of now: the day an entry written now counts for.
      */
     fun observeEntriesTodayCount(): Flow<Int> =
         ofUser(0) { uid ->
-            observeStats().flatMapLatest { stats ->
-                val today = entryDay(LocalDate.now(), stats?.lastEntryDate).toString()
-                db.entryDao().observeCountOn(uid, today)
-            }
+            val today = entryDay(Instant.now(), ZoneId.systemDefault()).toString()
+            db.entryDao().observeCountOn(uid, today)
         }
 
     /**
@@ -567,6 +563,9 @@ class GardenRepository(
         val result = client.postgrest.rpc(
             "submit_gratitude_entry",
             buildJsonObject {
+                // The id is ours, so a retried submit is recognised rather than paid twice.
+                put("p_id", UUID.randomUUID().toString())
+                put("p_written_at", Instant.now().toString())
                 put("p_entry_text", text)
                 put("p_input_method", if (voice) "voice_to_text" else "text")
                 // The server dates the entry in this zone (local day, not UTC day).
