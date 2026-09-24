@@ -1,8 +1,9 @@
 # Offline-first plan (roadmap 1.1)
 
-Status: **phase 1 (read cache) done 2026-09-24; phases 2 and 3 not started.** Written
-2026-09-23. Decisions below were made with the project owner; everything else is a default
-that can be revisited. Where phase 1 departed from this plan, the section says so.
+Status: **phases 1 (read cache) and 2 (offline journal) done 2026-09-24; phase 3 not
+started.** Written 2026-09-23. Decisions below were made with the project owner; everything
+else is a default that can be revisited. Where the work departed from this plan, the
+section says so.
 
 ## Why now: what happens offline today
 
@@ -53,7 +54,11 @@ Checked on an emulator (airplane mode, cold start, signed-in account with a plan
   (`KEEP`). This is the job WorkManager is for: deferrable, must eventually happen,
   survives process death. (Contrast with 0.8, where a time-of-day nudge was the wrong fit.)
   Also attempt a sync immediately after each write when online, so the common case feels
-  instant.
+  instant. *(Built as `OutboxWorker` with `REPLACE`, not `KEEP`: a worker that had just
+  emptied the queue would swallow the request for an op queued in that instant. Replacing
+  only cancels the worker's wait; delivery runs in the repository's scope and every op is
+  safe to resend. A force-stop cancels an app's jobs, so the repository also schedules a
+  delivery on start when the queue isn't empty.)*
 - **Economy actions stay direct RPCs**, gated on a `ConnectivityMonitor` `StateFlow`, and
   their results trigger a refresh into Room.
 
@@ -63,15 +68,18 @@ Mirror the server rows the UI already uses; no new concepts beyond sync state.
 
 | Entity | Source | Notes |
 | --- | --- | --- |
-| `EntryEntity` | `gratitude_entries` | `id` is a **client-generated UUID** (see idempotency). Adds `syncState` (`PENDING`, `SYNCED`, `FAILED`), `writtenAt`. `coinsAwarded` and `entryDate` are null until the server answers: the server decides both. |
-| `OutboxOp` | local only | `SUBMIT` / `EDIT` / `DELETE`, `entryId`, payload, `attempts`, `lastError`, `createdAt`. |
+| `EntryEntity` | `gratitude_entries` | `id` is a **client-generated UUID** (see idempotency). Adds `syncState` (`PENDING`, `SYNCED`, `FAILED`) and `syncError`. `coinsAwarded` is null until the server answers. *(As built: no `writtenAt`, since `createdAt` holds the write time and the server stores the same instant; and `entryDate` is predicted on the device rather than null, so the cap count and week strip include pending entries. The server's answer replaces it.)* |
+| `OutboxOp` | local only | `SUBMIT` / `EDIT` / `DELETE`, `entryId`, payload (text, input method, the zone and instant it was written), `attempts`, `lastError`. Ordered by an autoincrement `seq`. |
 | `ProfileEntity`, `StatsEntity`, `WalletEntity`, `SettingsEntity` | one row each | Replaced wholesale on refresh. |
 | `GardenEntity`, `PlantEntity` | `gardens`, `garden_plants` | Replaced on refresh. |
 | `ItemEntity`, `InventoryEntity` | `items`, `user_inventory` | Catalog plus ownership. |
 
 **Outbox coalescing**, so a queue never replays something the user already undid:
 an edit of a still-pending submit rewrites the submit's text; a delete of a still-pending
-submit drops both and the entry never reaches the server.
+submit drops both and the entry never reaches the server. *(As built: an op already on the
+wire is never rewritten; the change queues behind it. And the entry sync skips entries with
+ops queued, checked inside its transaction, so a refresh can't put the server's older text
+back over an offline edit.)*
 
 **Journal paging:** a heavy user writes ~3,600 short rows a year, so read from Room with a
 growing `LIMIT`, not Paging 3. The network side is a delta sync on `updated_at` (which a
@@ -108,6 +116,11 @@ never see edits or deletes made elsewhere.)*
 6. Drop `gratitude_entries.entry_date`'s leftover UTC column default. The RPC always sets
    the date explicitly, and a default that disagrees with the rules is a trap.
 
+*(Done in `20260924150000_offline_journal`, applied live. Also: `created_at` is the trusted
+write time, so the journal keeps when an entry was written rather than when it synced; the
+partial `(user_id, entry_date)` index became a full one, since the cap and the streak read
+deleted rows; and `next_streak`, the one function `anon` could still execute, was dropped.)*
+
 The same traps as every migration here apply: drop the old signature rather than
 overloading it, then re-apply `revoke … from public, anon` and `grant … to authenticated`.
 
@@ -123,7 +136,7 @@ overloading it, then re-apply `revoke … from public, anon` and `grant … to a
   emulator by rewriting the stored `expiresAt` offline.
 - **Sign-out wipes Room.** It's this user's journal on a possibly shared device. If the
   outbox isn't empty, warn with the count ("2 thoughts haven't synced yet") and offer
-  *Sync now* / *Sign out anyway*.
+  *Sync now* / *Sign out anyway*. *(Done: "Log out anyway", to match the button.)*
 - **Backups.** Exclude the Room database and the supabase-kt session store from
   `backup_rules.xml` and `data_extraction_rules.xml` (cloud backup and device transfer).
   After a restore the user signs in and the journal re-downloads.
@@ -138,7 +151,7 @@ overloading it, then re-apply `revoke … from public, anon` and `grant … to a
 | Phase | Size | Delivers | Done when |
 | --- | --- | --- | --- |
 | **1. Read cache** ✅ | M | Room + entities, repositories write-through, ViewModels observe Flows, reconnect refresh, auth-state handling, backup exclusions | Airplane-mode cold start shows the real garden and journal; reconnecting refreshes without user action |
-| **2. Offline journal** | M | Outbox, client UUIDs, `SyncWorker`, the server migration above, pending UI, sign-out guard | Entries written offline across midnight sync to the right days with correct streak and coins; replaying the queue twice changes nothing |
+| **2. Offline journal** ✅ | M | Outbox, client UUIDs, `SyncWorker`, the server migration above, pending UI, sign-out guard | Entries written offline across midnight sync to the right days with correct streak and coins; replaying the queue twice changes nothing |
 | **3. Polish** | S | Offline banner, economy disabled states, failed-op UI | Every screen behaves sensibly offline with nothing misleading |
 
 Phase 1 is independently valuable: it fixes the wiped-garden bug even before any offline
@@ -149,6 +162,9 @@ writing exists, and it can ship alone.
 - **Repository tests against a fake remote** (roadmap Tier 3): refresh failure leaves Room
   untouched; outbox coalescing; replay idempotency.
 - **Room migration tests** from the first schema version on (`exportSchema = true`).
+  *(Not yet: phase 2 rewrote version 1 in place, which is allowed until the first release.
+  A device with an earlier build installed fails Room's identity check at launch until
+  its app data is cleared.)*
 - **SQL checks for the migration**, run as the test admin like the local-day change:
   duplicate `p_id` pays once; `p_written_at` outside the window falls back to now;
   out-of-order dates give the right streak; double delete succeeds.
@@ -169,3 +185,24 @@ signed release build after phase 1, as in 0.2.
   wiring for now. Tier 3 revisits DI once billing arrives too.
 - **1.6 onboarding** (entries before signup) builds directly on phase 2's outbox: local
   entries with no user yet, attached on signup.
+
+## Phase 2 as verified (2026-09-24)
+
+- **SQL:** the migration and its checks ran in one transaction with two throwaway users,
+  rolled back, before being applied. A replay pays once and keeps the first text; an
+  entry backdated 30 h that arrives after today's lands on yesterday and makes the streak 2;
+  40 h old or an hour ahead falls back to now; a double delete succeeds; a missing or
+  foreign delete still fails; the cap still counts deleted rows; `anon` can execute none of it.
+- **Repository tests** (FakeSupabase now implements the journal RPCs): an offline entry
+  shows at once as pending; reconnecting delivers and pays it; edits of a queued entry make
+  one submit; deleting one sends nothing; a lost answer is replayed and paid once; every op
+  in a mixed queue carried out twice changes nothing; a refresh during a queued edit keeps
+  the local text; a refused entry is kept and the queue moves on; the cap is checked offline.
+- **Emulator, airplane mode:** four entries, one edited and one deleted before syncing, one
+  at 23:34 in London and one at 00:34 in Berlin. With the app's process killed and the
+  network back, `OutboxWorker` started a fresh process and delivered: London on 9/24,
+  Berlin on 9/25, coins paid once each, a streak of 3. The signed consumer release did the
+  same after R8, with an empty crash buffer.
+- **Force-stop is not a valid test of the worker:** Android cancels a force-stopped app's
+  jobs until it is next launched. Kill the process from the background instead
+  (`am kill`), which is what the system does under memory pressure.

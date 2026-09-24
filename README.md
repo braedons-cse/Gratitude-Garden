@@ -78,9 +78,11 @@ per unit of work.
   the subway. Add Room as the source of truth, render from it instantly, sync to Supabase
   in the background with a queue and conflict resolution. Also kills the loading spinners.
   Do this **first** in this tier: it gets harder with every feature layered onto the
-  current direct-to-network pattern. **Planned** in
+  current direct-to-network pattern. Plan in
   [`docs/offline-first-plan.md`](docs/offline-first-plan.md): journal fully offline,
-  economy online-only, three phases.
+  economy online-only, three phases. **Phases 1 (read cache) and 2 (offline journal) are
+  done**; phase 3 (offline banner, disabled economy buttons, retry/discard for a refused
+  entry) remains.
 - **1.2 Home-screen widget + richer notifications — M.** The fastest path to a daily habit
   is not opening the app. A Glance widget showing the streak, today's plant, and a one-tap
   "add entry" field puts the loop on the home screen; notification actions (inline reply,
@@ -243,9 +245,15 @@ profiling/                          # before/after profiling evidence
   graph; authenticated users land in `HomeScaffold`, whose `NavHost` holds the
   `garden`, `shop`, `journal`, `me`, and `admin` routes.
 
-> Note for roadmap item 1.1: there is currently **no local cache**. Every screen reads
-> straight from PostgREST, so the app is unusable offline. That is the single biggest
-> structural change ahead of it.
+- **Room is the only thing the screens read** (roadmap 1.1). Refreshes pull from Supabase
+  into Room, the entries by a delta sync on `updated_at`; a failed refresh leaves the last
+  good copy on screen.
+- **Journal writes are local first.** Submitting, editing or deleting an entry lands in
+  Room at once and queues an op in an `outbox` table. The repository delivers the queue in
+  order, straight away when it can, and `OutboxWorker` (WorkManager, network required)
+  delivers it later otherwise, even if the app isn't running. Every op is safe to resend:
+  the entry id is generated on the device, so the server recognises a replayed submit and
+  pays it once. Economy actions (buy, plant, water) stay online-only.
 
 ---
 
@@ -337,9 +345,9 @@ server will refuse.
 | Effort | `0–3` | `+1` per 40 characters, capped at 3 — so it stops paying at 120. Whitespace runs are collapsed first, so padding with newlines buys nothing and a 10,000-character paste earns exactly what a 120-character paragraph does |
 | Streak | `0–5` | `+1` per full week, **first entry of the day only** |
 
-The streak bonus is restricted to the day's first entry on purpose: `next_streak` returns
-`greatest(prev_streak, 1)` when the date is unchanged, so a streak never advances within a
-day, and paying the bonus on all ten allowed entries would multiply it tenfold. Net range is
+The streak bonus is restricted to the day's first entry on purpose: the streak an entry
+extends is the same for every entry of a day, so paying the bonus on all ten allowed entries
+would multiply it tenfold. Net range is
 **5–13** for the first entry of a day and **5–8** after that — verified by brute force across
 600 lengths × 400 streak values.
 
@@ -353,11 +361,30 @@ Acquiring them in the opposite order would open a same-user deadlock window.
 dates the entry in that zone. Entries used to be dated in UTC, which for a New York user
 flipped the day at 8 PM (the reminder's default time): evening entries landed on tomorrow,
 and writing on a Monday morning and a Tuesday evening broke the streak. The zone is
-client-supplied, so the entry day is also **monotonic**:
-`greatest(local date, last_entry_date)`. Hopping east to reach tomorrow early and then back
-west can't reopen a finished day, so the most anyone gains from changing zones is one extra
-day's cap, once. The client mirrors that rule in `entryDay()` so the "thoughts left" chip
-counts the same day the cap does.
+client-supplied, so it was also made **monotonic** there: `greatest(local date,
+last_entry_date)`, so the most anyone gained from changing zones was one extra day's cap.
+
+**Entries written offline keep the day they were written** (`20260924150000_offline_journal`).
+A queued entry may reach the server hours later, so the client now sends the entry's id
+(`p_id`), when it was written (`p_written_at`) and the zone it was written in:
+
+- A second submit with the same id returns the first row untouched: no second row, no
+  second reward. The id check runs after the wallet and stats locks, so two in-flight
+  copies of one submit serialize. An id owned by another user is an error.
+- The write time is trusted within `[now() − 36 h, now() + 5 min]`, otherwise `now()`. The
+  entry's day is its local date in its zone, and `created_at` is that instant.
+- That backdating replaces the monotonic rule, which refused exactly this. The bound still
+  holds: a zone moves the date by at most a day and backdating is capped at 36 h, so the
+  most anyone gains is yesterday's unused cap. The cap is still per `entry_date`, deleted
+  rows included, clamped at 50.
+- Entries no longer arrive in date order, so the streak is **recomputed** from the dates
+  (`streak_through(user, day)`, gaps and islands) rather than incremented. Deleted entries
+  still count, as before.
+- A repeated `delete_gratitude_entry` succeeds instead of raising "entry not found".
+
+The client mirrors the day rule in `entryDay()`, so the "thoughts left" chip counts the
+same day the cap does, and it checks the cap (mirrored from `user_settings`) before
+queueing, so an entry past it is refused on the spot rather than at sync.
 
 Watering is held at a flat server-side `10`, matching the previous cost so the
 "Water · 10 coins" label and the affordability gate in `GardenScreen.kt` stay truthful.
