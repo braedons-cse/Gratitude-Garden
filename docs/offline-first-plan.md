@@ -1,7 +1,6 @@
 # Offline-first plan (roadmap 1.1)
 
-Status: **phases 1 (read cache) and 2 (offline journal) done 2026-09-24; phase 3 not
-started.** Written 2026-09-23. Decisions below were made with the project owner; everything
+Status: **all three phases done 2026-09-24** (read cache, offline journal, polish). Written 2026-09-23. Decisions below were made with the project owner; everything
 else is a default that can be revisited. Where the work departed from this plan, the
 section says so.
 
@@ -145,6 +144,14 @@ overloading it, then re-apply `revoke … from public, anon` and `grant … to a
 - **UI states.** Pending entries show a small "will sync" mark and no coin amount. Economy
   buttons show "Needs a connection" when offline. A slim offline banner sits on the Garden.
   `FAILED` ops (e.g. text rejected) surface on the entry with retry and discard.
+  *(As built: "waiting to sync" / "couldn't sync". A refused entry's dialog says why. Retry
+  resends it as a submit then an edit, which is right whether or not the server ever had
+  it. When the original was deleted on another device, retry can't work, so it offers
+  "Save as a new thought" instead. Discard restores the server's copy, or removes the entry
+  if the server never had it, and needs a connection to know which. The entry sync leaves
+  refused entries alone until the user decides; without that, the refresh after
+  reconnecting replaced a refused edit with the server's deleted copy, text and all. The
+  refresh each screen runs on opening stays quiet offline; a pull-to-refresh still reports.)*
 
 ## Phases
 
@@ -152,7 +159,7 @@ overloading it, then re-apply `revoke … from public, anon` and `grant … to a
 | --- | --- | --- | --- |
 | **1. Read cache** ✅ | M | Room + entities, repositories write-through, ViewModels observe Flows, reconnect refresh, auth-state handling, backup exclusions | Airplane-mode cold start shows the real garden and journal; reconnecting refreshes without user action |
 | **2. Offline journal** ✅ | M | Outbox, client UUIDs, `SyncWorker`, the server migration above, pending UI, sign-out guard | Entries written offline across midnight sync to the right days with correct streak and coins; replaying the queue twice changes nothing |
-| **3. Polish** | S | Offline banner, economy disabled states, failed-op UI | Every screen behaves sensibly offline with nothing misleading |
+| **3. Polish** ✅ | S | Offline banner, economy disabled states, failed-op UI | Every screen behaves sensibly offline with nothing misleading |
 
 Phase 1 is independently valuable: it fixes the wiped-garden bug even before any offline
 writing exists, and it can ship alone.

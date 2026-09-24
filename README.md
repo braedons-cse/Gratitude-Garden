@@ -80,9 +80,9 @@ per unit of work.
   Do this **first** in this tier: it gets harder with every feature layered onto the
   current direct-to-network pattern. Plan in
   [`docs/offline-first-plan.md`](docs/offline-first-plan.md): journal fully offline,
-  economy online-only, three phases. **Phases 1 (read cache) and 2 (offline journal) are
-  done**; phase 3 (offline banner, disabled economy buttons, retry/discard for a refused
-  entry) remains.
+  economy online-only, three phases. **Done**: the read cache, the offline journal, and
+  the polish (an offline banner, economy buttons that say they need a connection, and
+  retry or discard for an entry the server refuses).
 - **1.2 Home-screen widget + richer notifications — M.** The fastest path to a daily habit
   is not opening the app. A Glance widget showing the streak, today's plant, and a one-tap
   "add entry" field puts the loop on the home screen; notification actions (inline reply,
@@ -253,7 +253,9 @@ profiling/                          # before/after profiling evidence
   order, straight away when it can, and `OutboxWorker` (WorkManager, network required)
   delivers it later otherwise, even if the app isn't running. Every op is safe to resend:
   the entry id is generated on the device, so the server recognises a replayed submit and
-  pays it once. Economy actions (buy, plant, water) stay online-only.
+  pays it once. An entry the server refuses keeps its text and is marked "couldn't sync",
+  with retry and discard. Economy actions (buy, plant, water, move, dig) stay online-only
+  and say so while offline.
 
 ---
 
