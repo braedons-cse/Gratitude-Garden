@@ -1,23 +1,48 @@
 package com.gratitudegarden.app.data
 
+import androidx.room.withTransaction
+import com.gratitudegarden.app.data.local.GardenDatabase
+import com.gratitudegarden.app.data.local.SettingsEntity
+import com.gratitudegarden.app.data.local.SyncCursorEntity
+import com.gratitudegarden.app.data.local.toEntity
+import com.gratitudegarden.app.data.local.toRow
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
-import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
-import io.github.jan.supabase.postgrest.query.filter.FilterOperator
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 // ── Row DTOs (partial — only the columns the UI needs) ───────────────
 @Serializable
@@ -29,6 +54,8 @@ data class GratitudeEntry(
     @SerialName("entry_date") val entryDate: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
+    /** Read only by the entry sync, as its cursor; not stored locally. */
+    @SerialName("updated_at") val updatedAt: String? = null,
 )
 
 @Serializable
@@ -129,33 +156,43 @@ data class Item(
 private data class InventoryRow(@SerialName("item_id") val itemId: String)
 
 @Serializable
-private data class EntryDateRow(@SerialName("entry_date") val entryDate: String)
-
-@Serializable
 private data class NotifPromptRow(
     @SerialName("notif_prompt_seen") val notifPromptSeen: Boolean = false,
 )
 
 /**
- * Thin client over the Supabase backend. Business logic (coins, streaks,
- * provisioning) lives in Postgres RPCs — this just authenticates, calls them,
- * and reads RLS-scoped rows.
+ * The app's one source of data. Screens observe Room through the `observe*` flows; the
+ * refreshes pull from Supabase and write into Room, so a failed refresh leaves the last
+ * good copy on screen instead of empty defaults (docs/offline-first-plan.md).
+ *
+ * Business logic (coins, streaks, provisioning) lives in Postgres RPCs. A mutation calls
+ * one, then refreshes the tables it touched; every screen observing them updates from Room.
  */
-class GardenRepository(private val client: SupabaseClient) {
+@OptIn(ExperimentalCoroutinesApi::class)
+class GardenRepository(
+    private val client: SupabaseClient,
+    private val db: GardenDatabase,
+) {
 
     val sessionStatus: StateFlow<SessionStatus> get() = client.auth.sessionStatus
 
-    // ── Cross-screen change signal ───────────────────────────────────
-    // The home pager keeps every tab's ViewModel alive, so a mutation on one
-    // screen would otherwise leave the others showing stale data until the app
-    // is recreated. Each mutation emits here; every ViewModel collects it and
-    // reloads, so plant/buy/water/entry changes appear everywhere immediately.
-    private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val changes: SharedFlow<Unit> = _changes.asSharedFlow()
-    private fun notifyChanged() { _changes.tryEmit(Unit) }
+    // Refreshes run here rather than in the caller's scope: one started by a screen that
+    // then goes away still finishes, and sign-out can cancel all of them before it wipes
+    // the tables, so none can write the previous user's rows back afterwards.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // One refresh of each group of tables at a time. Two overlapping fetches of the same
+    // rows could finish out of order and leave the older copy in Room.
+    private val accountLock = Mutex()
+    private val gardenLock = Mutex()
+    private val catalogLock = Mutex()
+    private val entriesLock = Mutex()
 
     // ── Auth ─────────────────────────────────────────────────────────
+    // Signing in or up starts from an empty database: whatever is left belongs to a
+    // session that already ended, possibly someone else's.
     suspend fun signIn(email: String, password: String) {
+        clearLocal()
         client.auth.signInWith(Email) {
             this.email = email
             this.password = password
@@ -163,6 +200,7 @@ class GardenRepository(private val client: SupabaseClient) {
     }
 
     suspend fun signUp(email: String, password: String, displayName: String) {
+        clearLocal()
         client.auth.signUpWith(Email) {
             this.email = email
             this.password = password
@@ -170,7 +208,10 @@ class GardenRepository(private val client: SupabaseClient) {
         }
     }
 
-    suspend fun signOut() = client.auth.signOut()
+    suspend fun signOut() {
+        client.auth.signOut()
+        clearLocal()
+    }
 
     /**
      * Permanently delete the signed-in user's own account.
@@ -179,8 +220,8 @@ class GardenRepository(private val client: SupabaseClient) {
      * here, before anything is deleted). The `delete_current_user` RPC then
      * removes the row in auth.users server-side; the ON DELETE CASCADE foreign
      * keys wipe every owned row (profile, settings, stats, wallet, entries,
-     * garden + plants, inventory). Finally the now-defunct local session is
-     * cleared so the app returns to the auth screen.
+     * garden + plants, inventory). Finally the now-defunct local session and
+     * the local copy of the data are cleared so the app returns to the auth screen.
      */
     suspend fun deleteOwnAccount(password: String) {
         val email = client.auth.currentUserOrNull()?.email
@@ -194,6 +235,263 @@ class GardenRepository(private val client: SupabaseClient) {
         // The session's user no longer exists; drop it locally regardless of the
         // server round-trip so sessionStatus flips to NotAuthenticated.
         runCatching { client.auth.signOut() }
+        clearLocal()
+    }
+
+    /**
+     * Drop everything stored on the device. It is one person's journal, possibly on a
+     * shared phone. In-flight refreshes are cancelled first so none can write back into
+     * the emptied tables.
+     */
+    private suspend fun clearLocal() {
+        scope.coroutineContext.job.children.forEach { it.cancelAndJoin() }
+        lastFullRefreshAt = null
+        withContext(Dispatchers.IO) { db.clearAllTables() }
+    }
+
+    // ── Reads (Room) ─────────────────────────────────────────────────
+    // Every read is scoped to the signed-in user, captured when the flow is created. The
+    // screens' ViewModels live inside a per-session scope (SessionScope), so a flow never
+    // outlives the user it was made for.
+    private fun currentUid(): String? = client.auth.currentUserOrNull()?.id
+
+    private inline fun <T> ofUser(signedOut: T, flow: (String) -> Flow<T>): Flow<T> =
+        currentUid()?.let(flow) ?: flowOf(signedOut)
+
+    fun observeProfile(): Flow<ProfileRow?> =
+        ofUser(null) { uid -> db.accountDao().observeProfile(uid).map { it?.toRow() } }
+
+    fun observeWallet(): Flow<WalletRow?> =
+        ofUser(null) { uid -> db.accountDao().observeWallet(uid).map { it?.toRow() } }
+
+    fun observeStats(): Flow<UserStatsRow?> =
+        ofUser(null) { uid -> db.statsDao().observe(uid).map { it?.toRow() } }
+
+    fun observeGarden(): Flow<Garden?> =
+        ofUser(null) { uid -> db.gardenDao().observeGarden(uid).map { it?.toRow() } }
+
+    fun observePlants(): Flow<List<GardenPlantRow>> =
+        ofUser(emptyList()) { uid ->
+            db.gardenDao().observeGarden(uid).flatMapLatest { garden ->
+                if (garden == null) flowOf(emptyList())
+                else db.gardenDao().observePlants(garden.id).map { rows -> rows.map { it.toRow() } }
+            }
+        }
+
+    /** The whole shop catalog, cheapest first. Global, so it is the same for every user. */
+    fun observeCatalog(): Flow<List<Item>> =
+        db.itemDao().observeCatalog().map { rows -> rows.map { it.toRow() } }
+
+    /** Ids of the items the user owns. */
+    fun observeInventory(): Flow<Set<String>> =
+        ofUser(emptySet()) { uid -> db.itemDao().observeInventory(uid).map { it.toSet() } }
+
+    /** The newest [limit] live entries. The Journal pages by asking for a bigger [limit]. */
+    fun observeEntries(limit: Int): Flow<List<GratitudeEntry>> =
+        ofUser(emptyList()) { uid ->
+            db.entryDao().observeNewest(uid, limit).map { rows -> rows.map { it.toRow() } }
+        }
+
+    /** The entry dates (`yyyy-MM-dd`) within the last [days] days, for the Journal's week strip. */
+    fun observeRecentEntryDates(days: Int = 7): Flow<Set<String>> =
+        ofUser(emptySet()) { uid ->
+            val since = LocalDate.now().minusDays((days - 1).toLong()).toString()
+            db.entryDao().observeDatesSince(uid, since).map { it.toSet() }
+        }
+
+    /**
+     * How many entries the user has written today, **including soft-deleted ones**.
+     *
+     * This has to match `submit_gratitude_entry`'s cap check exactly, and that check
+     * counts deleted entries too: `delete_gratitude_entry` stamps `deleted_at` without
+     * refunding the coins, so a deleted entry has still been paid for. The entry sync
+     * keeps deleted rows for exactly this reason.
+     *
+     * "Today" is [entryDay], the same day `submit_gratitude_entry` will date the next
+     * entry, so it moves with the stats' `lastEntryDate`.
+     */
+    fun observeEntriesTodayCount(): Flow<Int> =
+        ofUser(0) { uid ->
+            observeStats().flatMapLatest { stats ->
+                val today = entryDay(LocalDate.now(), stats?.lastEntryDate).toString()
+                db.entryDao().observeCountOn(uid, today)
+            }
+        }
+
+    /**
+     * True once the enable-reminders prompt has been shown (accepted or declined). Read
+     * from the local copy of `user_settings`; until that has been fetched, answers true,
+     * so the prompt can't appear for someone who has already dismissed it.
+     */
+    suspend fun notifPromptSeen(): Boolean {
+        val uid = currentUid() ?: return true // not signed in → never prompt
+        return db.accountDao().observeSettings(uid).first()?.notifPromptSeen ?: true
+    }
+
+    // ── Refresh (Supabase → Room) ────────────────────────────────────
+    // Remote reads MUST filter by the signed-in user id explicitly — do NOT rely on
+    // RLS to return a single row. Admins have additive "read any row" policies
+    // (for the admin dashboard), so an unfiltered select returns EVERY user's
+    // row and firstOrNull() would grab an arbitrary account (e.g. someone
+    // else's profile). Always scope reads to the current uid.
+
+    private var fullRefresh: Deferred<Unit>? = null
+    @Volatile private var lastFullRefreshAt: TimeMark? = null
+
+    /**
+     * Refresh every table from Supabase. Callers that overlap share one run, and unless
+     * [force] is set, a run that finished within [FRESH_FOR] counts as current. That lets
+     * each screen ask on creation without multiplying requests; pull-to-refresh forces.
+     *
+     * Throws if the refresh fails. Room keeps what it had, so the caller only has to
+     * decide whether to say so.
+     */
+    suspend fun refreshAll(force: Boolean = false) {
+        val run = synchronized(this) {
+            fullRefresh?.takeIf { it.isActive }
+                ?: if (!force && lastFullRefreshAt.isWithin(FRESH_FOR)) null
+                else scope.async { refreshEverything() }.also { fullRefresh = it }
+        }
+        run?.await()
+    }
+
+    private fun TimeMark?.isWithin(d: Duration) = this != null && elapsedNow() < d
+
+    private suspend fun refreshEverything() {
+        val uid = currentUid() ?: return
+        coroutineScope {
+            launch { refreshAccount(uid) }
+            launch { refreshGarden(uid) }
+            launch { refreshCatalog(uid) }
+            launch { syncEntries(uid) }
+        }
+        lastFullRefreshAt = TimeSource.Monotonic.markNow()
+    }
+
+    private suspend inline fun <reified T : Any> fetchOwnRow(table: String, uid: String, idColumn: String = "user_id"): T? =
+        client.postgrest.from(table).select { filter { eq(idColumn, uid) } }.decodeList<T>().firstOrNull()
+
+    /** Profile, wallet, stats and settings: one row each. */
+    private suspend fun refreshAccount(uid: String) {
+        accountLock.withLock {
+            coroutineScope {
+                // Fetched concurrently; every await happens before the transaction opens,
+                // so no write lock is held across a network call.
+                val profileQ = async { fetchOwnRow<ProfileRow>("profiles", uid, idColumn = "id") }
+                val walletQ = async { fetchOwnRow<WalletRow>("coin_wallets", uid) }
+                val statsQ = async { fetchOwnRow<UserStatsRow>("user_stats", uid) }
+                val settingsQ = async { fetchOwnRow<NotifPromptRow>("user_settings", uid) }
+                val profile = profileQ.await()
+                val wallet = walletQ.await()
+                val stats = statsQ.await()
+                val settings = settingsQ.await()
+                db.withTransaction {
+                    profile?.let { db.accountDao().upsertProfile(it.toEntity(uid)) }
+                    wallet?.let { db.accountDao().upsertWallet(it.toEntity(uid)) }
+                    stats?.let { db.statsDao().upsert(it.toEntity(uid)) }
+                    settings?.let { db.accountDao().upsertSettings(SettingsEntity(uid, it.notifPromptSeen)) }
+                }
+            }
+        }
+    }
+
+    private suspend fun refreshGarden(uid: String) {
+        gardenLock.withLock {
+            val garden = fetchOwnRow<Garden>("gardens", uid)
+            val plants = if (garden == null) emptyList() else {
+                client.postgrest.from("garden_plants").select {
+                    filter { eq("garden_id", garden.id) }
+                }.decodeList<GardenPlantRow>()
+            }
+            db.gardenDao().replace(uid, garden?.toEntity(uid), plants.map { it.toEntity(garden!!.id) })
+        }
+    }
+
+    // items is a global catalog (same rows for everyone), so no uid filter.
+    private suspend fun refreshCatalog(uid: String) {
+        catalogLock.withLock {
+            coroutineScope {
+                val items = async { client.postgrest.from("items").select().decodeList<Item>() }
+                val owned = async {
+                    client.postgrest.from("user_inventory").select {
+                        filter { eq("user_id", uid) }
+                    }.decodeList<InventoryRow>().map { it.itemId }
+                }
+                val catalog = items.await().map { it.toEntity() }
+                val ownedIds = owned.await()
+                db.withTransaction {
+                    db.itemDao().replaceCatalog(catalog)
+                    db.itemDao().replaceInventory(uid, ownedIds)
+                }
+            }
+        }
+    }
+
+    /**
+     * Bring the local journal up to date with a delta sync on `updated_at`.
+     *
+     * Every insert, edit and soft-delete sets `updated_at` (a BEFORE UPDATE trigger), so
+     * reading rows past the stored cursor, deleted ones included, yields exactly what
+     * changed. The first sync on a device reads the whole history this way, in batches.
+     * The cursor is `(updated_at, id)`, not the timestamp alone, so a batch boundary can
+     * fall inside a run of rows that share one `updated_at` (a bulk update) without
+     * skipping or repeating any of them.
+     *
+     * Each batch and the cursor that follows it commit together, so an interrupted sync
+     * resumes where it stopped.
+     *
+     * Known gap: `updated_at` is the writing transaction's start time, so a write that
+     * commits after a later-stamped one was already read would be missed until it changes
+     * again. It needs two devices writing to one account within the same instant.
+     */
+    private suspend fun syncEntries(uid: String) {
+        entriesLock.withLock {
+            val key = "entries:$uid"
+            var cursor = db.syncCursorDao().get(key)
+            while (true) {
+                val after = cursor
+                val batch = client.postgrest.from("gratitude_entries").select {
+                    filter {
+                        eq("user_id", uid)
+                        if (after != null) {
+                            or {
+                                gt("updated_at", after.updatedAt)
+                                and {
+                                    eq("updated_at", after.updatedAt)
+                                    gt("id", after.lastId)
+                                }
+                            }
+                        }
+                    }
+                    order("updated_at", Order.ASCENDING)
+                    order("id", Order.ASCENDING)
+                    limit(SYNC_BATCH.toLong())
+                }.decodeList<GratitudeEntry>()
+                if (batch.isEmpty()) break
+
+                val last = batch.last()
+                val next = SyncCursorEntity(key, updatedAt = checkNotNull(last.updatedAt), lastId = last.id)
+                db.withTransaction {
+                    db.entryDao().upsertAll(batch.map { it.toEntity(uid) })
+                    db.syncCursorDao().put(next)
+                }
+                cursor = next
+                if (batch.size < SYNC_BATCH) break
+            }
+        }
+    }
+
+    /**
+     * After a write succeeds, pull the tables it changed. Failures are swallowed: the
+     * write itself went through, and the next refresh catches up.
+     */
+    private suspend fun afterWrite(vararg refreshes: suspend (String) -> Unit) {
+        val uid = currentUid() ?: return
+        try {
+            scope.async { coroutineScope { refreshes.forEach { r -> launch { r(uid) } } } }.await()
+        } catch (e: Exception) {
+            currentCoroutineContext().ensureActive() // still let the caller's own cancellation through
+        }
     }
 
     // ── Gratitude entries (RPCs) ─────────────────────────────────────
@@ -207,8 +505,8 @@ class GardenRepository(private val client: SupabaseClient) {
      * really just a suggestion an attacker can rewrite.
      *
      * Returns the coins actually awarded, or null if the reply couldn't be
-     * decoded. The entry saves either way, and the balance is re-read by
-     * [changes] collectors regardless, so a null only costs the "+N" in the
+     * decoded. The entry saves either way, and the refreshed wallet shows the
+     * new balance regardless, so a null only costs the "+N" in the
      * confirmation toast.
      */
     suspend fun submitEntry(text: String, voice: Boolean): Int? {
@@ -221,7 +519,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_time_zone", ZoneId.systemDefault().id)
             },
         )
-        notifyChanged()
+        afterWrite(::syncEntries, ::refreshAccount)
         return runCatching { result.decodeAs<GratitudeEntry>().coinsAwarded }.getOrNull()
     }
 
@@ -233,7 +531,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_new_text", newText)
             },
         )
-        notifyChanged()
+        afterWrite(::syncEntries)
     }
 
     suspend fun deleteEntry(id: String) {
@@ -241,130 +539,7 @@ class GardenRepository(private val client: SupabaseClient) {
             "delete_gratitude_entry",
             buildJsonObject { put("p_entry_id", id) },
         )
-        notifyChanged()
-    }
-
-    // ── Reads ────────────────────────────────────────────────────────
-    // These MUST filter by the signed-in user id explicitly — do NOT rely on
-    // RLS to return a single row. Admins have additive "read any row" policies
-    // (for the admin dashboard), so an unfiltered select returns EVERY user's
-    // row and firstOrNull() would grab an arbitrary account (e.g. someone
-    // else's profile). Always scope reads to the current uid.
-    private fun currentUid(): String? = client.auth.currentUserOrNull()?.id
-
-    suspend fun entries(): List<GratitudeEntry> {
-        val uid = currentUid() ?: return emptyList()
-        return client.postgrest.from("gratitude_entries").select {
-            filter { eq("user_id", uid) }
-        }.decodeList<GratitudeEntry>()
-            .filter { it.deletedAt == null }
-            .sortedByDescending { it.createdAt }
-    }
-
-    /**
-     * How many entries the user has written today, **including soft-deleted ones**.
-     *
-     * This has to match `submit_gratitude_entry`'s cap check exactly, and that check
-     * counts deleted entries too: `delete_gratitude_entry` stamps `deleted_at` without
-     * refunding the coins, so a deleted entry has still been paid for. Counting only
-     * the live rows here would show "N thoughts left" for entries the server will
-     * refuse — and [entries] filters deleted rows out, so it is the wrong source.
-     *
-     * "Today" is [entryDay], the same day `submit_gratitude_entry` will date the next
-     * entry, so pass the stats' `lastEntryDate`.
-     */
-    suspend fun entriesTodayCount(lastEntryDate: String?): Int {
-        val uid = currentUid() ?: return 0
-        val today = entryDay(LocalDate.now(), lastEntryDate).toString()
-        return client.postgrest.from("gratitude_entries")
-            .select(Columns.list("entry_date")) {
-                filter {
-                    eq("user_id", uid)
-                    eq("entry_date", today)
-                }
-            }.decodeList<EntryDateRow>().size
-    }
-
-    /** How many journal entries to fetch per page (see [entriesPage]). */
-    val entriesPageSize: Int get() = 20
-
-    /**
-     * One page of the signed-in user's gratitude entries, newest first.
-     *
-     * Optimization vs [entries]: the newest-first ordering and the soft-delete filter
-     * run server-side, and only [limit] rows are fetched — so the Journal no longer
-     * downloads, deserializes, sorts, and retains the user's *entire* history just to
-     * fill one screen. Pass [createdBefore] (the `createdAt` of the oldest row you
-     * already hold) to fetch the next page. This is keyset pagination: it stays
-     * correct even as new entries are inserted between page loads.
-     */
-    suspend fun entriesPage(
-        limit: Int = entriesPageSize,
-        createdBefore: String? = null,
-    ): List<GratitudeEntry> {
-        val uid = currentUid() ?: return emptyList()
-        return client.postgrest.from("gratitude_entries").select {
-            filter {
-                eq("user_id", uid)
-                filter("deleted_at", FilterOperator.IS, null)
-                if (createdBefore != null) lt("created_at", createdBefore)
-            }
-            order("created_at", Order.DESCENDING)
-            limit(limit.toLong())
-        }.decodeList<GratitudeEntry>()
-    }
-
-    /**
-     * The set of entry dates (`yyyy-MM-dd`) within the last [days] days — exactly what
-     * the Journal's week-strip needs, fetched as a narrow, bounded query instead of
-     * scanning the whole history. Uses the local date, which is how `entry_date` is stored.
-     */
-    suspend fun recentEntryDates(days: Int = 7): Set<String> {
-        val uid = currentUid() ?: return emptySet()
-        val since = LocalDate.now().minusDays((days - 1).toLong()).toString()
-        return client.postgrest.from("gratitude_entries")
-            .select(Columns.list("entry_date")) {
-                filter {
-                    eq("user_id", uid)
-                    filter("deleted_at", FilterOperator.IS, null)
-                    gte("entry_date", since)
-                }
-            }.decodeList<EntryDateRow>().map { it.entryDate }.toSet()
-    }
-
-    suspend fun garden(): Garden? {
-        val uid = currentUid() ?: return null
-        return client.postgrest.from("gardens").select {
-            filter { eq("user_id", uid) }
-        }.decodeList<Garden>().firstOrNull()
-    }
-
-    suspend fun plants(): List<GardenPlantRow> {
-        val gardenId = garden()?.id ?: return emptyList()
-        return client.postgrest.from("garden_plants").select {
-            filter { eq("garden_id", gardenId) }
-        }.decodeList<GardenPlantRow>()
-    }
-
-    suspend fun stats(): UserStatsRow? {
-        val uid = currentUid() ?: return null
-        return client.postgrest.from("user_stats").select {
-            filter { eq("user_id", uid) }
-        }.decodeList<UserStatsRow>().firstOrNull()
-    }
-
-    suspend fun wallet(): WalletRow? {
-        val uid = currentUid() ?: return null
-        return client.postgrest.from("coin_wallets").select {
-            filter { eq("user_id", uid) }
-        }.decodeList<WalletRow>().firstOrNull()
-    }
-
-    suspend fun profile(): ProfileRow? {
-        val uid = currentUid() ?: return null
-        return client.postgrest.from("profiles").select {
-            filter { eq("id", uid) }
-        }.decodeList<ProfileRow>().firstOrNull()
+        afterWrite(::syncEntries, ::refreshAccount)
     }
 
     // ── Notification prompt flag (Supabase-backed, per-user) ─────────
@@ -380,43 +555,18 @@ class GardenRepository(private val client: SupabaseClient) {
     // mark_notif_prompt_seen() is a no-argument one-way latch, so there is
     // nothing here for a caller to name.
 
-    /** True once the enable-reminders prompt has been shown (accepted or declined). */
-    suspend fun notifPromptSeen(): Boolean {
-        val uid = currentUid() ?: return true // not signed in → never prompt
-        return client.postgrest.from("user_settings").select {
-            filter { eq("user_id", uid) }
-        }.decodeList<NotifPromptRow>().firstOrNull()?.notifPromptSeen ?: false
-    }
-
     suspend fun markNotifPromptSeen() {
         // The RPC derives the user from auth.uid() and raises if there is none;
         // the local guard just avoids a pointless round trip when signed out.
-        currentUid() ?: return
+        val uid = currentUid() ?: return
         client.postgrest.rpc("mark_notif_prompt_seen")
+        db.accountDao().upsertSettings(SettingsEntity(uid, notifPromptSeen = true))
     }
 
     // ── Shop / inventory / garden interactions ───────────────────────
-    // items is a global catalog (same rows for everyone), so no uid filter.
-    suspend fun items(category: String): List<Item> =
-        client.postgrest.from("items").select().decodeList<Item>()
-            .filter { it.category == category }
-            .sortedBy { it.priceCoins }
-
-    /** item_id -> slug for everything, so the garden can render plants by type. */
-    suspend fun itemSlugs(): Map<String, String> =
-        client.postgrest.from("items").select().decodeList<Item>()
-            .associate { it.id to it.slug }
-
-    suspend fun inventory(): Set<String> {
-        val uid = currentUid() ?: return emptySet()
-        return client.postgrest.from("user_inventory").select {
-            filter { eq("user_id", uid) }
-        }.decodeList<InventoryRow>().map { it.itemId }.toSet()
-    }
-
     suspend fun purchaseItem(itemId: String) {
         client.postgrest.rpc("purchase_item", buildJsonObject { put("p_item_id", itemId) })
-        notifyChanged()
+        afterWrite(::refreshAccount, ::refreshCatalog)
     }
 
     suspend fun placePlant(itemId: String, gridX: Int, gridY: Int) {
@@ -428,7 +578,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_grid_y", gridY)
             },
         )
-        notifyChanged()
+        afterWrite(::refreshGarden)
     }
 
     /** Water a plant. The cost is decided and charged server-side. */
@@ -437,7 +587,7 @@ class GardenRepository(private val client: SupabaseClient) {
             "water_plant",
             buildJsonObject { put("p_plant_id", plantId) },
         )
-        notifyChanged()
+        afterWrite(::refreshGarden, ::refreshAccount)
     }
 
     /** Move an existing plant to a new cell (server rejects occupied/out-of-bounds). */
@@ -450,7 +600,7 @@ class GardenRepository(private val client: SupabaseClient) {
                 put("p_grid_y", gridY)
             },
         )
-        notifyChanged()
+        afterWrite(::refreshGarden)
     }
 
     /** Dig up (delete) one of the user's own plants. RLS scopes the delete to the owner. */
@@ -458,19 +608,16 @@ class GardenRepository(private val client: SupabaseClient) {
         client.postgrest.from("garden_plants").delete {
             filter { eq("id", plantId) }
         }
-        notifyChanged()
+        afterWrite(::refreshGarden)
     }
 
-    /** The seeds the user owns, as catalog items — for the "plant a seed here" picker. */
-    suspend fun ownedSeeds(): List<Item> {
-        val owned = inventory()
-        return items("seed").filter { it.id in owned }
-    }
-
-    /** Plant an owned seed into the first free cell. Returns false if the garden is full. */
+    /**
+     * Plant an owned seed into the first free cell. Returns false if the garden is full.
+     * Free cells come from the local copy; the server still rejects an occupied one.
+     */
     suspend fun plantInFirstEmptyCell(itemId: String): Boolean {
-        val garden = garden() ?: return false
-        val occupied = plants().map { it.gridX to it.gridY }.toSet()
+        val garden = observeGarden().first() ?: return false
+        val occupied = observePlants().first().map { it.gridX to it.gridY }.toSet()
         for (y in 0 until garden.gridRows) {
             for (x in 0 until garden.gridCols) {
                 if ((x to y) !in occupied) {
@@ -480,5 +627,13 @@ class GardenRepository(private val client: SupabaseClient) {
             }
         }
         return false
+    }
+
+    private companion object {
+        /** How long a full refresh counts as current for callers that don't force one. */
+        val FRESH_FOR = 30.seconds
+
+        /** Rows per request in the entry sync. PostgREST on Supabase caps a response at 1000. */
+        const val SYNC_BATCH = 500
     }
 }

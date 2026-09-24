@@ -24,6 +24,7 @@ import androidx.room.RoomDatabase
         ItemEntity::class,
         InventoryEntity::class,
         EntryEntity::class,
+        SyncCursorEntity::class,
     ],
     version = 1,
     exportSchema = true,
@@ -34,6 +35,7 @@ abstract class GardenDatabase : RoomDatabase() {
     abstract fun gardenDao(): GardenDao
     abstract fun itemDao(): ItemDao
     abstract fun entryDao(): EntryDao
+    abstract fun syncCursorDao(): SyncCursorDao
 
     companion object {
         const val FILE_NAME = "garden.db"

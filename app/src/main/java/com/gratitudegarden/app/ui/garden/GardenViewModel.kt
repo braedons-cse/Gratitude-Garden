@@ -13,10 +13,13 @@ import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
 import com.gratitudegarden.app.ui.gardenApp
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -51,47 +54,40 @@ class GardenViewModel(
     val ui: StateFlow<GardenUiState> = _ui.asStateFlow()
 
     init {
+        showIn(_ui, repo.observeProfile()) { copy(displayName = it?.displayName ?: "") }
+        showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
+        showIn(_ui, repo.observeStats()) { copy(streak = it?.effectiveStreak ?: 0) }
+        showIn(_ui, repo.observeGarden()) {
+            copy(
+                gardenName = it?.name ?: "My Garden",
+                gridRows = it?.gridRows ?: 6,
+                gridCols = it?.gridCols ?: 5,
+            )
+        }
+        showIn(_ui, repo.observePlants()) { copy(plants = it) }
+        showIn(_ui, repo.observeCatalog()) { copy(itemSlugs = it.associate { item -> item.id to item.slug }) }
+        showIn(_ui, ownedSeeds()) { copy(ownedSeeds = it) }
+        showIn(_ui, repo.observeEntriesTodayCount()) { copy(usedToday = it) }
         refresh()
-        // Reload whenever any screen mutates data (e.g. planting from the Shop).
-        viewModelScope.launch { repo.changes.collect { load() } }
     }
 
+    private fun ownedSeeds(): Flow<List<Item>> =
+        combine(repo.observeCatalog(), repo.observeInventory()) { items, owned ->
+            items.filter { it.category == "seed" && it.id in owned }
+        }
+
+    /**
+     * Pull fresh data into Room. The screen already shows the last good copy, so a failure
+     * only costs a message, never the garden.
+     */
     fun refresh() {
-        viewModelScope.launch { load() }
-    }
-
-    private suspend fun load() {
-        try {
-            val profile = repo.profile()
-            val wallet = repo.wallet()
-            val stats = repo.stats()
-            val garden = repo.garden()
-            val plants = repo.plants()
-            val slugs = repo.itemSlugs()
-            val owned = repo.ownedSeeds()
-            // Counted server-side over today's rows only. This used to filter a
-            // full repo.entries() fetch — the user's entire history — client-side,
-            // which both wasted the round trip and dropped soft-deleted rows. Those
-            // still count against the daily cap, because deleting an entry doesn't
-            // refund its coins.
-            val used = repo.entriesTodayCount(stats?.lastEntryDate)
-            _ui.update {
-                it.copy(
-                    loading = false,
-                    displayName = profile?.displayName ?: "",
-                    gardenName = garden?.name ?: "My Garden",
-                    coins = wallet?.balance ?: 0,
-                    streak = stats?.effectiveStreak ?: 0,
-                    plants = plants,
-                    gridRows = garden?.gridRows ?: 6,
-                    gridCols = garden?.gridCols ?: 5,
-                    itemSlugs = slugs,
-                    ownedSeeds = owned,
-                    usedToday = used,
-                )
+        viewModelScope.launch {
+            try {
+                repo.refreshAll()
+            } catch (e: Exception) {
+                _ui.update { it.copy(message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
             }
-        } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
+            _ui.update { it.copy(loading = false) }
         }
     }
 
@@ -101,7 +97,6 @@ class GardenViewModel(
         viewModelScope.launch {
             try {
                 val awarded = repo.submitEntry(text.trim(), voice)
-                load()
                 // The server decides the reward, so the toast reports what was
                 // actually awarded rather than promising a fixed number.
                 val note = if (awarded != null) "+$awarded coins · " else ""
@@ -116,7 +111,8 @@ class GardenViewModel(
     /**
      * After a gratitude entry saves, show the one-time "enable daily reminders?"
      * prompt if this user has never seen it. The seen-flag lives in Supabase
-     * (per-user), so it's shown exactly once per account — not once per install.
+     * (per-user, mirrored in Room), so it's shown exactly once per account — not
+     * once per install.
      */
     private suspend fun maybeOfferReminders() {
         val alreadyAsked = runCatching { repo.notifPromptSeen() }.getOrDefault(true)
@@ -148,7 +144,6 @@ class GardenViewModel(
         viewModelScope.launch {
             try {
                 repo.waterPlant(plantId)
-                load()
                 _ui.update { it.copy(watering = false, message = "Watered 🌱 · -10 coins") }
             } catch (e: Exception) {
                 _ui.update { it.copy(watering = false, message = e.toUserMessage("Couldn't water your plant", ::friendly)) }
@@ -163,7 +158,6 @@ class GardenViewModel(
         viewModelScope.launch {
             try {
                 repo.placePlant(itemId, x, y)
-                load()
                 _ui.update { it.copy(placing = false, message = "Planted 🌿") }
             } catch (e: Exception) {
                 _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
@@ -178,7 +172,6 @@ class GardenViewModel(
         viewModelScope.launch {
             try {
                 repo.movePlant(plantId, x, y)
-                load()
                 _ui.update { it.copy(placing = false) }
             } catch (e: Exception) {
                 _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
@@ -193,7 +186,6 @@ class GardenViewModel(
         viewModelScope.launch {
             try {
                 repo.digUpPlant(plantId)
-                load()
                 _ui.update { it.copy(placing = false, message = "Dug up 🪴") }
             } catch (e: Exception) {
                 _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }

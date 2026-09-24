@@ -96,9 +96,9 @@ fun JournalScreen(
     var editEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
 
-    // Ask the ViewModel for the next page as the user nears the end of the list.
-    // Only visible rows are ever composed (LazyColumn), and only ~one screen of
-    // entries is fetched/held at a time (keyset pagination in the ViewModel).
+    // Ask the ViewModel for more of the history as the user nears the end of the list.
+    // Only visible rows are ever composed (LazyColumn), and the ViewModel holds only
+    // as many entries as have been scrolled to (a growing limit on the Room query).
     val listState = rememberLazyListState()
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -175,20 +175,6 @@ fun JournalScreen(
             items(section.entries, key = { it.id }) { entry ->
                 EntryCard(entry = entry, onClick = { actionEntry = entry })
                 Spacer(Modifier.height(8.dp))
-            }
-        }
-
-        if (ui.loadingMore) {
-            item(key = "loading-more") {
-                Text(
-                    "Loading more…",
-                    fontFamily = Nunito,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp,
-                    color = GgInkMuted,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
             }
         }
 

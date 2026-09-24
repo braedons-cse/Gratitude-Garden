@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,38 +32,29 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
     val ui: StateFlow<ShopUiState> = _ui.asStateFlow()
 
     init {
-        viewModelScope.launch { load() }
-        // Reload when data changes elsewhere (coins after buying, ownership, etc.).
-        viewModelScope.launch { repo.changes.collect { load() } }
+        showIn(_ui, repo.observeCatalog()) { items -> copy(seeds = items.filter { it.category == "seed" }) }
+        showIn(_ui, repo.observeInventory()) { copy(owned = it) }
+        showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
+        showIn(_ui, repo.observeProfile()) { copy(level = it?.level ?: 1) }
+        viewModelScope.launch { pull(force = false) }
     }
 
     /** User-initiated pull-to-refresh — shows the spinner while reloading. */
     fun refresh() {
         viewModelScope.launch {
             _ui.update { it.copy(refreshing = true) }
-            load()
+            pull(force = true)
             _ui.update { it.copy(refreshing = false) }
         }
     }
 
-    private suspend fun load() {
+    private suspend fun pull(force: Boolean) {
         try {
-            val seeds = repo.items("seed")
-            val owned = repo.inventory()
-            val wallet = repo.wallet()
-            val profile = repo.profile()
-            _ui.update {
-                it.copy(
-                    loading = false,
-                    seeds = seeds,
-                    owned = owned,
-                    coins = wallet?.balance ?: 0,
-                    level = profile?.level ?: 1,
-                )
-            }
+            repo.refreshAll(force)
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, message = e.toUserMessage("Couldn't load the shop", ::friendly)) }
+            _ui.update { it.copy(message = e.toUserMessage("Couldn't load the shop", ::friendly)) }
         }
+        _ui.update { it.copy(loading = false) }
     }
 
     fun buy(item: Item) {
@@ -71,7 +63,6 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
         viewModelScope.launch {
             try {
                 repo.purchaseItem(item.id)
-                load()
                 _ui.update { it.copy(busyItemId = null, message = "Bought ${item.name} 🌱") }
             } catch (e: Exception) {
                 _ui.update { it.copy(busyItemId = null, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }

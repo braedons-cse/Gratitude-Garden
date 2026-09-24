@@ -37,5 +37,5 @@ class AppContainer(private val context: Context) {
     // Lazy so the file isn't opened until a repository first needs it.
     val database: GardenDatabase by lazy { GardenDatabase.create(context) }
 
-    val gardenRepository: GardenRepository by lazy { GardenRepository(supabase) }
+    val gardenRepository: GardenRepository by lazy { GardenRepository(supabase, database) }
 }

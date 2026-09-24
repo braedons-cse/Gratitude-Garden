@@ -15,6 +15,7 @@ import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
 import com.gratitudegarden.app.ui.gardenApp
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.showIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,44 +53,44 @@ class MeViewModel(
     private val reminderPrefs = ReminderPreferences(appContext)
 
     init {
-        viewModelScope.launch { load() }
+        showIn(_ui, repo.observeProfile()) {
+            copy(
+                name = it?.displayName ?: "Gardener",
+                level = it?.level ?: 1,
+                isAdmin = it?.isAdmin ?: false,
+            )
+        }
+        showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
+        showIn(_ui, repo.observeStats()) {
+            copy(streak = it?.effectiveStreak ?: 0, totalEntries = it?.totalEntries ?: 0)
+        }
+        viewModelScope.launch { loadDeviceSettings() }
         // Reconcile the alarm on launch (NOT on every data change — see below).
         reconcileReminder()
-        // Keep stats/coins fresh when they change on other screens.
-        viewModelScope.launch { repo.changes.collect { load() } }
+        // Failures are silent here: the Garden tab already reports them, and the
+        // numbers on this screen stay at their last synced values.
+        viewModelScope.launch { runCatching { repo.refreshAll() } }
     }
 
-    private suspend fun load() {
-        try {
-            val profile = repo.profile()
-            val wallet = repo.wallet()
-            val stats = repo.stats()
-            val reminder = reminderPrefs.current()
-            _ui.update {
-                it.copy(
-                    loading = false,
-                    name = profile?.displayName ?: "Gardener",
-                    level = profile?.level ?: 1,
-                    coins = wallet?.balance ?: 0,
-                    streak = stats?.effectiveStreak ?: 0,
-                    totalEntries = stats?.totalEntries ?: 0,
-                    isAdmin = profile?.isAdmin ?: false,
-                    reminderEnabled = reminder.enabled,
-                    reminderHour = reminder.hour,
-                    reminderMinute = reminder.minute,
-                    osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
-                    micGranted = micGranted(),
-                )
-            }
-        } catch (_: Exception) {
-            _ui.update { it.copy(loading = false) }
+    /** The settings that live on this device rather than in Supabase. */
+    private suspend fun loadDeviceSettings() {
+        val reminder = reminderPrefs.current()
+        _ui.update {
+            it.copy(
+                loading = false,
+                reminderEnabled = reminder.enabled,
+                reminderHour = reminder.hour,
+                reminderMinute = reminder.minute,
+                osNotificationsEnabled = ReminderNotifications.enabledAtOsLevel(appContext),
+                micGranted = micGranted(),
+            )
         }
     }
 
     /**
      * Reconcile the daily-reminder alarm with current OS state. Called on launch and
-     * on resume — deliberately NOT from [load], which also runs on every cross-screen
-     * data change and would needlessly churn the alarm.
+     * on resume — deliberately NOT on data changes, which would needlessly churn the
+     * alarm.
      *
      * - Notifications revoked → turn the reminder off (reflects reality).
      * - Otherwise (re)arm the alarm. This is idempotent and also handles the two ways

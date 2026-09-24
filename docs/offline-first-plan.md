@@ -73,8 +73,13 @@ an edit of a still-pending submit rewrites the submit's text; a delete of a stil
 submit drops both and the entry never reaches the server.
 
 **Journal paging:** a heavy user writes ~3,600 short rows a year, so read from Room with a
-growing `LIMIT`, not Paging 3. The network side keeps the existing keyset pagination to
-backfill history into Room.
+growing `LIMIT`, not Paging 3. The network side is a delta sync on `updated_at` (which a
+`BEFORE UPDATE` trigger bumps on every edit and soft-delete): rows past a stored
+`(updated_at, id)` cursor, deleted ones included, in batches of 500. The first sync on a
+device downloads the whole history this way; later ones fetch only what changed. Holding
+every row, deleted ones too, makes the week strip and the daily-cap count exact offline.
+*(Changed during phase 1 from the original "keyset pagination backfills Room", which could
+never see edits or deletes made elsewhere.)*
 
 ## Server changes (one migration, phase 2)
 

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "9c61f0f6d38713f9593595a187394600",
+    "identityHash": "1e8dfc9fd1b6c3bd71c8cb37d4f01be6",
     "entities": [
       {
         "tableName": "profile",
@@ -430,11 +430,41 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_gratitude_entries_userId_entryDate` ON `${TABLE_NAME}` (`userId`, `entryDate`)"
           }
         ]
+      },
+      {
+        "tableName": "sync_cursor",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `updatedAt` TEXT NOT NULL, `lastId` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastId",
+            "columnName": "lastId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9c61f0f6d38713f9593595a187394600')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1e8dfc9fd1b6c3bd71c8cb37d4f01be6')"
     ]
   }
 }

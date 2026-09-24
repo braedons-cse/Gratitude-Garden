@@ -8,10 +8,14 @@ import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.effectiveStreak
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -21,7 +25,6 @@ data class JournalSection(val label: String, val entries: List<GratitudeEntry>)
 data class JournalUiState(
     val loading: Boolean = true,
     val refreshing: Boolean = false,
-    val loadingMore: Boolean = false,
     val endReached: Boolean = false,
     val totalEntries: Int = 0,
     val streak: Int = 0,
@@ -30,81 +33,63 @@ data class JournalUiState(
     val error: String? = null,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
 
     private val _ui = MutableStateFlow(JournalUiState())
     val ui: StateFlow<JournalUiState> = _ui.asStateFlow()
 
-    // Accumulated entries across the pages loaded so far (newest first).
-    private var loaded: List<GratitudeEntry> = emptyList()
-    private var pageInFlight = false
+    // How many entries the list shows. The whole history is synced into Room, so paging
+    // is only a bigger LIMIT on a local query: no network, and nothing to wait for.
+    private val limit = MutableStateFlow(PAGE_SIZE)
+
+    // Whether the first refresh has finished (or failed). Until then an empty Room most
+    // likely means "not downloaded yet", not "no entries", so the empty state waits.
+    private var firstRefreshDone = false
 
     init {
-        viewModelScope.launch { loadFirstPage() }
-        // Reload the first page when entries change (e.g. a new thought planted from
-        // the Garden). This resets pagination to the top — the newest entries.
-        viewModelScope.launch { repo.changes.collect { loadFirstPage() } }
+        showIn(_ui, repo.observeStats()) {
+            copy(totalEntries = it?.totalEntries ?: 0, streak = it?.effectiveStreak ?: 0)
+        }
+        // One row past the limit tells whether there is anything left to show.
+        val page = limit.flatMapLatest { n -> repo.observeEntries(n + 1).map { n to it } }
+        showIn(_ui, page) { (n, rows) ->
+            copy(
+                loading = rows.isEmpty() && !firstRefreshDone,
+                sections = sectionsOf(rows.take(n)),
+                endReached = rows.size <= n,
+            )
+        }
+        showIn(_ui, repo.observeRecentEntryDates()) { dates ->
+            copy(entryDates = dates.map { atMostToday(it) }.toSet())
+        }
+        viewModelScope.launch { pull(force = false) }
     }
 
-    /** User-initiated pull-to-refresh — shows the spinner while reloading page one. */
+    /** User-initiated pull-to-refresh — shows the spinner while syncing. */
     fun refresh() {
         viewModelScope.launch {
             _ui.update { it.copy(refreshing = true) }
-            loadFirstPage()
+            pull(force = true)
             _ui.update { it.copy(refreshing = false) }
         }
     }
 
-    private suspend fun loadFirstPage() {
-        try {
-            val stats = repo.stats()
-            val page = repo.entriesPage(limit = PAGE_SIZE)
-            val recentDates = repo.recentEntryDates()
-            loaded = page
-            _ui.update {
-                it.copy(
-                    loading = false,
-                    totalEntries = stats?.totalEntries ?: page.size,
-                    streak = stats?.effectiveStreak ?: 0,
-                    sections = sectionsOf(loaded),
-                    entryDates = recentDates.map { atMostToday(it) }.toSet(),
-                    endReached = page.size < PAGE_SIZE,
-                    error = null,
-                )
-            }
+    private suspend fun pull(force: Boolean) {
+        val error = try {
+            repo.refreshAll(force)
+            null
         } catch (e: Exception) {
-            _ui.update { it.copy(loading = false, error = e.toUserMessage("Couldn't load your journal")) }
+            e.toUserMessage("Couldn't load your journal")
         }
+        firstRefreshDone = true
+        _ui.update { it.copy(loading = false, error = error) }
     }
 
-    /**
-     * Fetch the next page when the user nears the bottom of the list. Safe to call
-     * repeatedly — it no-ops while a page is in flight or once the end is reached.
-     */
+    /** Show more of the history as the user nears the bottom of the list. Safe to call repeatedly. */
     fun loadMore() {
-        if (pageInFlight) return
-        val s = _ui.value
-        if (s.loading || s.endReached) return
-        pageInFlight = true
-        viewModelScope.launch {
-            _ui.update { it.copy(loadingMore = true) }
-            try {
-                val before = loaded.lastOrNull()?.createdAt
-                val next = repo.entriesPage(limit = PAGE_SIZE, createdBefore = before)
-                loaded = loaded + next
-                _ui.update {
-                    it.copy(
-                        sections = sectionsOf(loaded),
-                        endReached = next.size < PAGE_SIZE,
-                        loadingMore = false,
-                    )
-                }
-            } catch (_: Exception) {
-                _ui.update { it.copy(loadingMore = false) }
-            } finally {
-                pageInFlight = false
-            }
-        }
+        if (_ui.value.endReached) return
+        limit.update { it + PAGE_SIZE }
     }
 
     private fun sectionsOf(entries: List<GratitudeEntry>): List<JournalSection> {
@@ -134,14 +119,14 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
     fun edit(id: String, newText: String) {
         if (newText.isBlank()) return
         viewModelScope.launch {
-            try { repo.editEntry(id, newText.trim()); loadFirstPage() }
+            try { repo.editEntry(id, newText.trim()) }
             catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) } }
         }
     }
 
     fun delete(id: String) {
         viewModelScope.launch {
-            try { repo.deleteEntry(id); loadFirstPage() }
+            try { repo.deleteEntry(id) }
             catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't delete that entry")) } }
         }
     }
