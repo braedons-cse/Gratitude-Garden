@@ -413,6 +413,16 @@ class GardenRepository(
     @Volatile private var lastFullRefreshAt: TimeMark? = null
 
     init {
+        // A queue left from an earlier run gets a delivery scheduled. WorkManager keeps one
+        // that was already scheduled across restarts; this covers a write that raced a
+        // finishing worker, and an app that was force-stopped, which cancels its jobs.
+        watchScope.launch {
+            try {
+                if (db.outboxDao().size() > 0) outboxScheduler.schedule()
+            } catch (e: Exception) {
+                Log.w(LogTags.APP_LOGIC, "Couldn't check the journal outbox", e)
+            }
+        }
         // Refresh on its own when the network comes back or the auth library gets a valid
         // token again, so a screen that loaded offline doesn't stay stale until the user
         // writes something or restarts the app. Both are needed: after a reconnect the
@@ -710,6 +720,14 @@ class GardenRepository(
             }
         }
         deliverSoon()
+    }
+
+    /**
+     * Wait, up to [timeout], until the auth library has loaded the stored session and tried
+     * its token. Background work in a fresh process calls this before delivering.
+     */
+    suspend fun awaitSessionSettled(timeout: Duration) {
+        withTimeoutOrNull(timeout) { client.auth.sessionStatus.first { it !is SessionStatus.Initializing } }
     }
 
     /** How many entries have changes the server hasn't confirmed; sign-out warns about them. */
