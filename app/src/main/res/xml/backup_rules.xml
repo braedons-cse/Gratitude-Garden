@@ -1,13 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   Auto Backup rules for Android 11 and lower (minSdk 28-30). Android 12+ reads
+   data_extraction_rules.xml instead; keep the two in step.
+
+   Kept out of backups:
+   - The Room database (garden.db and its WAL/SHM files): one person's journal, and a copy
+     of what the server already holds. After a restore the user signs in and it syncs down.
+   - supabase-kt's stored session, which holds the refresh token. It lives in the default
+     shared preferences, named after the application ID, so each flavor is listed.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="database" path="garden.db" />
+    <exclude domain="database" path="garden.db-wal" />
+    <exclude domain="database" path="garden.db-shm" />
+    <exclude domain="database" path="garden.db-journal" />
+    <exclude domain="sharedpref" path="com.gratitudegarden.app_preferences.xml" />
+    <exclude domain="sharedpref" path="com.gratitudegarden.app.staging_preferences.xml" />
 </full-backup-content>
