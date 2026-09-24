@@ -52,8 +52,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
 import kotlin.time.Duration
@@ -76,6 +78,8 @@ data class GratitudeEntry(
     @SerialName("updated_at") val updatedAt: String? = null,
     /** Local only: whether the server has this version yet. */
     @Transient val syncState: SyncState = SyncState.SYNCED,
+    /** Local only: the server's reason, when it refused this entry ([SyncState.FAILED]). */
+    @Transient val syncError: String? = null,
 )
 
 /** What became of a submitted entry. In every case it is in the journal. */
@@ -202,7 +206,7 @@ private data class SettingsRow(
 class GardenRepository(
     private val client: SupabaseClient,
     private val db: GardenDatabase,
-    connectivity: ConnectivityMonitor,
+    private val connectivity: ConnectivityMonitor,
     private val outboxScheduler: OutboxScheduler = OutboxScheduler.None,
 ) {
 
@@ -318,6 +322,12 @@ class GardenRepository(
         lastFullRefreshAt = null
         withContext(Dispatchers.IO) { db.clearAllTables() }
     }
+
+    /**
+     * Whether the device can reach the internet. The journal works either way; the garden's
+     * economy (buy, plant, water, move, dig) is online-only, and its buttons say so.
+     */
+    val isOnline: StateFlow<Boolean> get() = connectivity.isOnline
 
     // ── Reads (Room) ─────────────────────────────────────────────────
     // Every read is scoped to the signed-in user, captured when the flow is created. The
@@ -584,10 +594,13 @@ class GardenRepository(
                 db.withTransaction {
                     // An entry with a change still queued keeps its local version: the
                     // server's is older, and the outbox writes the answer back when it
-                    // delivers. Checked inside the transaction, so a local write can't
-                    // slip in between the check and the upsert.
-                    val queued = db.outboxDao().pendingEntryIds().toSet()
-                    db.entryDao().upsertAll(batch.filter { it.id !in queued }.map { it.toEntity(uid) })
+                    // delivers. So does one the server refused, until the user retries or
+                    // discards it; otherwise, say, an edit refused because the entry was
+                    // deleted on another device would vanish, text and all, on the next
+                    // refresh. Checked inside the transaction, so a local write can't slip
+                    // in between the check and the upsert.
+                    val keepLocal = db.outboxDao().pendingEntryIds().toSet() + db.entryDao().refusedIds(uid)
+                    db.entryDao().upsertAll(batch.filter { it.id !in keepLocal }.map { it.toEntity(uid) })
                     db.syncCursorDao().put(next)
                 }
                 cursor = next
@@ -681,12 +694,17 @@ class GardenRepository(
 
     /**
      * Change an entry's text. A change still waiting in the queue is rewritten rather than
-     * followed by another, so the server sees one request with the final text.
+     * followed by another, so the server sees one request with the final text. Editing an
+     * entry the server refused sends it again with the new text ([retryEntry]).
      */
     suspend fun editEntry(id: String, newText: String) {
         val uid = currentUid() ?: return
-        localLock.withLock {
+        val refused = localLock.withLock {
             db.withTransaction {
+                if (db.entryDao().get(id)?.syncState == SyncState.FAILED) {
+                    db.entryDao().setText(id, newText, SyncState.FAILED)
+                    return@withTransaction true
+                }
                 val waiting = db.outboxDao().opsFor(id).lastOrNull()?.takeIf { it.seq != inFlight }
                 if (waiting != null && waiting.type != OutboxType.DELETE) {
                     db.outboxDao().setText(waiting.seq, newText)
@@ -694,9 +712,10 @@ class GardenRepository(
                     db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = newText))
                 }
                 db.entryDao().setText(id, newText, SyncState.PENDING)
+                false
             }
         }
-        deliverSoon()
+        if (refused) retryEntry(id) else deliverSoon()
     }
 
     /**
@@ -728,6 +747,74 @@ class GardenRepository(
      */
     suspend fun awaitSessionSettled(timeout: Duration) {
         withTimeoutOrNull(timeout) { client.auth.sessionStatus.first { it !is SessionStatus.Initializing } }
+    }
+
+    /**
+     * Send a refused entry again, with its text as it is now. It goes as a submit followed by
+     * an edit: if the server never received it, the submit creates it (under its original id
+     * and write time); if it did, the submit is recognised and changes nothing, and the edit
+     * applies the text. Either way no second reward, and no need to know which.
+     *
+     * If the day's cap refused it, it will be refused again until its day has passed the
+     * 36-hour window, after which the server dates it now.
+     */
+    suspend fun retryEntry(id: String) {
+        val uid = currentUid() ?: return
+        localLock.withLock {
+            db.withTransaction {
+                val entry = db.entryDao().get(id)?.takeIf { it.syncState == SyncState.FAILED } ?: return@withTransaction
+                db.outboxDao().insert(
+                    OutboxOp(
+                        userId = uid,
+                        type = OutboxType.SUBMIT,
+                        entryId = id,
+                        text = entry.entryText,
+                        inputMethod = entry.inputMethod,
+                        timeZone = ZoneId.systemDefault().id,
+                        writtenAt = Instant.from(OffsetDateTime.parse(entry.createdAt)).toString(),
+                    ),
+                )
+                db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = entry.entryText))
+                db.entryDao().setSyncState(id, SyncState.PENDING)
+            }
+        }
+        deliverSoon()
+    }
+
+    /**
+     * Give up on a refused change: put back the server's copy of the entry, or remove it if
+     * the server never had it. Only the server can say which, so this needs a connection
+     * and a token; without them it throws rather than guess (a read without a token comes
+     * back empty, which would look like "never had it").
+     */
+    suspend fun discardEntry(id: String) {
+        val uid = currentUid() ?: return
+        if (!hasToken()) throw IOException("Can't reach the server to discard this change.")
+        val serverCopy = client.postgrest.from("gratitude_entries").select {
+            filter {
+                eq("id", id)
+                eq("user_id", uid)
+            }
+        }.decodeList<GratitudeEntry>().firstOrNull()
+        localLock.withLock {
+            db.withTransaction {
+                // A retry may have been tapped meanwhile; then there's nothing to discard.
+                if (db.entryDao().get(id)?.syncState != SyncState.FAILED) return@withTransaction
+                if (serverCopy == null) db.entryDao().hardDelete(id) else db.entryDao().upsert(serverCopy.toEntity(uid))
+            }
+        }
+    }
+
+    /**
+     * Keep the words of a refused entry as a brand-new one, for when the original can't be
+     * saved (it was deleted on another device). The original is discarded first, so this
+     * needs a connection, and the new entry goes through [submitEntry] like any other,
+     * daily cap and reward included.
+     */
+    suspend fun saveAsNewEntry(id: String): SubmitResult? {
+        val entry = db.entryDao().get(id)?.takeIf { it.syncState == SyncState.FAILED } ?: return null
+        discardEntry(id)
+        return submitEntry(entry.entryText, voice = entry.inputMethod == "voice_to_text")
     }
 
     /** How many entries have changes the server hasn't confirmed; sign-out warns about them. */

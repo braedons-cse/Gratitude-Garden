@@ -92,6 +92,11 @@ class FakeSupabase {
         }
     }
 
+    /** Server-side delete, as from another device: `deleted_at` and a fresh `updated_at`. */
+    fun deleteElsewhere(id: String) {
+        entries.first { it.id == id }.apply { deletedAt = nextStamp(); updatedAt = deletedAt!! }
+    }
+
     /** Server-side edit, as from another device: new text, fresh `updated_at`. */
     fun edit(id: String, text: String) {
         entries.first { it.id == id }.apply { this.text = text; updatedAt = nextStamp() }
@@ -201,6 +206,8 @@ class FakeSupabase {
     }
 
     private fun entriesPage(params: Parameters): String {
+        // A lookup of one entry (discarding a refused change), not the sync.
+        params["id"]?.let { f -> return entries.filter { f == "eq.${it.id}" }.joinToString(",", "[", "]") { json(it) } }
         check(params["order"] == "updated_at.asc.nullslast,id.asc.nullslast") { "unexpected order ${params["order"]}" }
         var rows = entries.sortedWith(compareBy({ it.updatedAt }, { it.id }))
         params["or"]?.let { or ->

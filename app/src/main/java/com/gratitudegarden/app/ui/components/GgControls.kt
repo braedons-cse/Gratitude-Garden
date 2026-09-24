@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -162,7 +163,13 @@ fun PillButton(
 ) {
     val shape = RoundedCornerShape(percent = 50)
     val interaction = remember { MutableInteractionSource() }
-    Box(modifier = modifier.height(56.dp).pressScale(interaction, pressedScale = 0.96f)) {
+    // Dimmed when disabled: without it a disabled button looks exactly like a live one.
+    Box(
+        modifier = modifier
+            .height(56.dp)
+            .alpha(if (enabled) 1f else 0.45f)
+            .pressScale(interaction, pressedScale = 0.96f),
+    ) {
         if (primary) {
             Box(
                 modifier = Modifier

@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -126,6 +127,17 @@ fun ShopScreen(
                 TabPill(label = t.label, selected = tab == t, onClick = { tab = t })
             }
         }
+        if (!ui.online) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Offline. Buying and planting need a connection.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.5.sp,
+                color = GgInkSoft,
+                modifier = Modifier.testTag("shop_offline_note"),
+            )
+        }
         Spacer(Modifier.height(16.dp))
 
         when (tab) {
@@ -169,6 +181,7 @@ private fun SeedGrid(ui: ShopUiState, onBuy: (Item) -> Unit, onPlant: (Item) -> 
                             owned = item.id in ui.owned,
                             level = ui.level,
                             busy = ui.busyItemId == item.id,
+                            online = ui.online,
                             onBuy = { onBuy(item) },
                             onPlant = { onPlant(item) },
                         )
@@ -186,6 +199,7 @@ private fun SeedCard(
     owned: Boolean,
     level: Int,
     busy: Boolean,
+    online: Boolean,
     onBuy: () -> Unit,
     onPlant: () -> Unit,
 ) {
@@ -219,9 +233,10 @@ private fun SeedCard(
         )
 
         when {
-            owned -> ShopButton(text = if (busy) "…" else "Plant", filled = false, enabled = !busy, onClick = onPlant)
+            owned -> ShopButton(text = if (busy) "…" else "Plant", filled = false, enabled = online && !busy, onClick = onPlant)
             locked -> ShopButton(text = "Lvl ${item.levelRequired}", filled = false, enabled = false, onClick = {})
-            else -> ShopButton(text = if (busy) "…" else "🪙 ${item.priceCoins}", filled = true, enabled = !busy, onClick = onBuy)
+            // Offline the price still shows, so the shop reads the same; it just can't be tapped.
+            else -> ShopButton(text = if (busy) "…" else "🪙 ${item.priceCoins}", filled = true, enabled = online && !busy, onClick = onBuy)
         }
     }
 }

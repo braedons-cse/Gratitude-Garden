@@ -414,4 +414,130 @@ class GardenRepositoryTest {
 
         assertEquals(0, db.outboxDao().size())
     }
+
+    // ── Refused entries: retry and discard ────────────────────────────
+
+    /** Write [text] while the server refuses it, and return its id. */
+    private suspend fun refusedEntry(text: String): String {
+        fake.refuseText = text
+        repo.submitEntry(text, voice = false)
+        fake.refuseText = null
+        return journal().single { it.entryText == text }.id.also {
+            assertEquals(SyncState.FAILED, journal().single { e -> e.id == it }.syncState)
+        }
+    }
+
+    @Test
+    fun retryingARefusedEntryDeliversItOnce() = runBlocking {
+        signIn()
+        val id = refusedEntry("refused the first time")
+
+        repo.retryEntry(id)
+        repo.drainOutbox()
+
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+        assertEquals(id, fake.entries.single().id)
+        assertEquals(1, fake.paidSubmits)
+    }
+
+    @Test
+    fun editingARefusedEntrySendsTheNewText() = runBlocking {
+        signIn()
+        val id = refusedEntry("refused draft")
+
+        repo.editEntry(id, "a better draft")
+        repo.drainOutbox()
+
+        assertEquals("a better draft", fake.entries.single().text)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun retryingARefusedEditOfASyncedEntryAppliesIt() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        fake.refuseText = "rejected"
+        repo.editEntry("e00000", "rejected words")
+        repo.drainOutbox()
+        assertEquals(SyncState.FAILED, journal().single().syncState)
+        fake.refuseText = null
+
+        repo.editEntry("e00000", "kinder words")
+        repo.drainOutbox()
+
+        // The retry's submit was recognised (no new row, no payment), then the edit applied.
+        assertEquals(1, fake.entries.size)
+        assertEquals(0, fake.paidSubmits)
+        assertEquals("kinder words", fake.entries.single().text)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun discardingARefusedNewEntryRemovesIt() = runBlocking {
+        signIn()
+        val id = refusedEntry("never reached the server")
+
+        repo.discardEntry(id)
+
+        assertTrue(journal().isEmpty())
+        assertTrue("the server never had it", fake.entries.isEmpty())
+    }
+
+    @Test
+    fun discardingARefusedEditPutsTheServerCopyBack() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        fake.refuseText = "rejected"
+        repo.editEntry("e00000", "rejected words")
+        repo.drainOutbox()
+        fake.refuseText = null
+
+        repo.discardEntry("e00000")
+
+        val entry = journal().single()
+        assertEquals("thanks #0", entry.entryText)
+        assertEquals(SyncState.SYNCED, entry.syncState)
+    }
+
+    @Test
+    fun discardingOfflineChangesNothing() = runBlocking {
+        signIn()
+        val id = refusedEntry("keep me for now")
+        fake.offline = true
+
+        try {
+            repo.discardEntry(id)
+            fail("discarding needs the server")
+        } catch (_: Exception) {
+        }
+
+        assertEquals(SyncState.FAILED, journal().single().syncState)
+    }
+
+    @Test
+    fun anEditOfAnEntryDeletedElsewhereIsKeptUntilTheUserDecides() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        fake.rpcsFail = true
+        repo.editEntry("e00000", "written on the plane")
+        fake.deleteElsewhere("e00000")
+        fake.rpcsFail = false
+
+        repo.drainOutbox()
+        repo.refreshAll(force = true)
+
+        // Refused, and the refresh that brought the server's deleted copy didn't replace it.
+        val refused = journal().single()
+        assertEquals("written on the plane", refused.entryText)
+        assertEquals(SyncState.FAILED, refused.syncState)
+        assertEquals("entry not found", refused.syncError)
+
+        repo.saveAsNewEntry("e00000")
+
+        val kept = journal().single()
+        assertEquals("written on the plane", kept.entryText)
+        assertEquals(SyncState.SYNCED, kept.syncState)
+        assertTrue("a new entry, not the deleted one", kept.id != "e00000")
+        assertEquals(2, fake.entries.size)
+    }
 }

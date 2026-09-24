@@ -8,6 +8,10 @@ import java.io.IOException
 internal const val OFFLINE_MESSAGE =
     "We can't reach the garden right now. Check your connection and try again."
 
+/** For the garden's economy (buy, plant, water, move, dig), which only works online. */
+internal const val NEEDS_CONNECTION_MESSAGE =
+    "That needs a connection. Your journal still works offline."
+
 /** Network failures: supabase-kt's own wrapper, plus Ktor timeouts (which are IOExceptions). */
 internal fun isOffline(e: Throwable): Boolean = e is HttpRequestException || e is IOException
 

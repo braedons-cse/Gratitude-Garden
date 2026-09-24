@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.effectiveStreak
+import com.gratitudegarden.app.ui.isOffline
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
@@ -75,12 +76,16 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
         }
     }
 
+    /**
+     * Only a refresh the user asked for ([force]) reports being offline. The one on opening
+     * the screen stays quiet: the journal is on screen from the device, and it works offline.
+     */
     private suspend fun pull(force: Boolean) {
         val error = try {
             repo.refreshAll(force)
             null
         } catch (e: Exception) {
-            e.toUserMessage("Couldn't load your journal")
+            if (force || !isOffline(e)) e.toUserMessage("Couldn't load your journal") else null
         }
         firstRefreshDone = true
         _ui.update { it.copy(loading = false, error = error) }
@@ -129,6 +134,40 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
             try { repo.deleteEntry(id) }
             catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't delete that entry")) } }
         }
+    }
+
+    /** Send an entry the server refused again, as it is now. */
+    fun retry(id: String) {
+        viewModelScope.launch {
+            try { repo.retryEntry(id) }
+            catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't try that again")) } }
+        }
+    }
+
+    /** Give up on a refused change: the server's copy comes back, or the entry goes if it never got there. */
+    fun discard(id: String) {
+        viewModelScope.launch {
+            try { repo.discardEntry(id) }
+            catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't discard that change")) } }
+        }
+    }
+
+    /** Keep a refused entry's words as a new thought (its original was deleted elsewhere). */
+    fun saveAsNew(id: String) {
+        viewModelScope.launch {
+            try { repo.saveAsNewEntry(id) }
+            catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't save that as a new thought", ::friendly)) } }
+        }
+    }
+
+    /** Server errors a journal action can meet on purpose; null means "use the fallback". */
+    private fun friendly(m: String): String? = when {
+        "daily entry cap" in m -> "That's all your thoughts for today. Come back tomorrow."
+        else -> null
+    }
+
+    fun consumeError() {
+        if (_ui.value.error != null) _ui.update { it.copy(error = null) }
     }
 
     companion object {

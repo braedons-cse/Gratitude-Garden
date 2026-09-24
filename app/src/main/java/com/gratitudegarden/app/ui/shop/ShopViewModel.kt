@@ -6,6 +6,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
+import com.gratitudegarden.app.ui.NEEDS_CONNECTION_MESSAGE
+import com.gratitudegarden.app.ui.isOffline
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
@@ -24,6 +26,8 @@ data class ShopUiState(
     val owned: Set<String> = emptySet(),
     val busyItemId: String? = null,
     val message: String? = null,
+    /** Buying and planting are online-only. */
+    val online: Boolean = true,
 )
 
 class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
@@ -36,6 +40,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
         showIn(_ui, repo.observeInventory()) { copy(owned = it) }
         showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
         showIn(_ui, repo.observeProfile()) { copy(level = it?.level ?: 1) }
+        showIn(_ui, repo.isOnline) { copy(online = it) }
         viewModelScope.launch { pull(force = false) }
     }
 
@@ -48,17 +53,30 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
         }
     }
 
+    /**
+     * Only a refresh the user asked for ([force]) reports being offline; the one on opening
+     * the screen stays quiet, since the shop already says it's offline.
+     */
     private suspend fun pull(force: Boolean) {
         try {
             repo.refreshAll(force)
         } catch (e: Exception) {
-            _ui.update { it.copy(message = e.toUserMessage("Couldn't load the shop", ::friendly)) }
+            if (force || !isOffline(e)) {
+                _ui.update { it.copy(message = e.toUserMessage("Couldn't load the shop", ::friendly)) }
+            }
         }
         _ui.update { it.copy(loading = false) }
     }
 
+    /** The buttons are disabled offline; this covers the moment the network drops. */
+    private fun needsConnection(): Boolean {
+        if (_ui.value.online) return false
+        _ui.update { it.copy(message = NEEDS_CONNECTION_MESSAGE) }
+        return true
+    }
+
     fun buy(item: Item) {
-        if (_ui.value.busyItemId != null) return
+        if (_ui.value.busyItemId != null || needsConnection()) return
         _ui.update { it.copy(busyItemId = item.id) }
         viewModelScope.launch {
             try {
@@ -71,7 +89,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
     }
 
     fun plant(item: Item) {
-        if (_ui.value.busyItemId != null) return
+        if (_ui.value.busyItemId != null || needsConnection()) return
         _ui.update { it.copy(busyItemId = item.id) }
         viewModelScope.launch {
             try {

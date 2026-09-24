@@ -141,6 +141,7 @@ fun GardenRoute(
         onPlantSeed = { itemId, x, y -> vm.plantSeedAt(itemId, x, y) },
         onMovePlant = { plantId, x, y -> vm.movePlant(plantId, x, y) },
         onDigUp = vm::digUp,
+        onNeedsConnection = vm::onNeedsConnection,
         onPlacementDone = onPlacementDone,
         onDragActive = onDragActive,
     )
@@ -157,6 +158,7 @@ fun GardenScreen(
     onPlantSeed: (String, Int, Int) -> Unit = { _, _, _ -> },
     onMovePlant: (String, Int, Int) -> Unit = { _, _, _ -> },
     onDigUp: (String) -> Unit = {},
+    onNeedsConnection: () -> Unit = {},
     onPlacementDone: () -> Unit = {},
     onDragActive: (Boolean) -> Unit = {},
 ) {
@@ -246,6 +248,11 @@ fun GardenScreen(
 
         Spacer(Modifier.height(10.dp))
 
+        if (!ui.online) {
+            OfflineBanner()
+            Spacer(Modifier.height(8.dp))
+        }
+
         // Placement banner — shown when the Shop sent us here to place a seed.
         if (placingItemId != null) {
             val name = ui.ownedSeeds.firstOrNull { it.id == placingItemId }?.name ?: "seed"
@@ -260,7 +267,9 @@ fun GardenScreen(
             onPlantClick = { selectedPlant = it },
             onEmptyClick = { x, y ->
                 val pid = placingItemId
-                if (pid != null) {
+                if (!ui.online) {
+                    onNeedsConnection()
+                } else if (pid != null) {
                     onPlantSeed(pid, x, y)
                     onPlacementDone()
                 } else {
@@ -317,6 +326,7 @@ fun GardenScreen(
             slug = ui.itemSlugs[plant.itemId],
             coins = ui.coins,
             watering = ui.watering,
+            online = ui.online,
             onWater = { onWater(plant.id); selectedPlant = null },
             onDigUp = { onDigUp(plant.id); selectedPlant = null },
             onDismiss = { selectedPlant = null },
@@ -494,6 +504,7 @@ private fun GardenGrid(
                                     phaseMillis = (r * ui.gridCols + c) * 240,
                                     cellPx = cellPx,
                                     gapPx = gapPx,
+                                    movable = ui.online,
                                     onTap = { onPlantClick(plant) },
                                     onDragStart = { draggingRow = r; onDragActive(true) },
                                     onDragStop = { draggingRow = null; onDragActive(false) },
@@ -526,6 +537,7 @@ private fun DraggablePlant(
     phaseMillis: Int,
     cellPx: IntSize,
     gapPx: Float,
+    movable: Boolean,
     onTap: () -> Unit,
     onDragStart: () -> Unit,
     onDragStop: () -> Unit,
@@ -560,7 +572,9 @@ private fun DraggablePlant(
             .pointerInput(plant.id) {
                 detectTapGestures { onTap() }
             }
-            .pointerInput(plant.id, strideX, strideY) {
+            .pointerInput(plant.id, strideX, strideY, movable) {
+                // Moving is an online-only action; offline a long press does nothing.
+                if (!movable) return@pointerInput
                 detectDragGesturesAfterLongPress(
                     onDragStart = { dragging = true; onDragStart() },
                     onDrag = { change, delta -> drag += delta; change.consume() },
@@ -583,6 +597,35 @@ private fun DraggablePlant(
             modifier = Modifier.fillMaxSize().padding(4.dp),
             idle = !dragging,
             phaseMillis = phaseMillis,
+        )
+    }
+}
+
+/**
+ * Shown while the device is offline. The journal keeps working (entries queue and sync
+ * later), so the banner says what still works, not just what doesn't. One line: the
+ * Garden has no scroll, and every line here comes out of the soil grid's space.
+ */
+@Composable
+private fun OfflineBanner() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(GgInk.copy(alpha = 0.06f))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .testTag("offline_banner"),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).clip(CircleShape).background(GgInkMuted))
+        Spacer(Modifier.size(8.dp))
+        Text(
+            text = "Offline · your thoughts will sync later",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            color = GgInkSoft,
         )
     }
 }
@@ -1020,6 +1063,7 @@ private fun PlantDetailDialog(
     slug: String?,
     coins: Int,
     watering: Boolean,
+    online: Boolean,
     onWater: () -> Unit,
     onDigUp: () -> Unit,
     onDismiss: () -> Unit,
@@ -1067,12 +1111,16 @@ private fun PlantDetailDialog(
                 Text("Fully grown 🌼", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GgPrimary)
             } else {
                 PillButton(
-                    text = if (watering) "Watering…" else "Water · 10 coins",
+                    text = when {
+                        !online -> "Needs a connection"
+                        watering -> "Watering…"
+                        else -> "Water · 10 coins"
+                    },
                     onClick = onWater,
-                    enabled = coins >= 10 && !watering,
+                    enabled = online && coins >= 10 && !watering,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (coins < 10) {
+                if (online && coins < 10) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Plant kind thoughts to earn coins to water.",
@@ -1092,10 +1140,10 @@ private fun PlantDetailDialog(
                 fontFamily = Nunito,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.5.sp,
-                color = GgAccentDeep,
+                color = if (online) GgAccentDeep else GgInkMuted,
                 modifier = Modifier
                     .clip(RoundedCornerShape(percent = 50))
-                    .clickable { if (confirmDig) onDigUp() else confirmDig = true }
+                    .clickable(enabled = online) { if (confirmDig) onDigUp() else confirmDig = true }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             )
             Spacer(Modifier.height(6.dp))

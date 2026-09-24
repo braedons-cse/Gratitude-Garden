@@ -1,5 +1,6 @@
 package com.gratitudegarden.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -81,6 +83,10 @@ fun JournalRoute() {
         ui = ui,
         onEdit = vm::edit,
         onDelete = vm::delete,
+        onRetry = vm::retry,
+        onDiscard = vm::discard,
+        onSaveAsNew = vm::saveAsNew,
+        onErrorShown = vm::consumeError,
         onRefresh = vm::refresh,
         onLoadMore = vm::loadMore,
     )
@@ -92,9 +98,21 @@ fun JournalScreen(
     ui: JournalUiState,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    onRetry: (String) -> Unit = {},
+    onDiscard: (String) -> Unit = {},
+    onSaveAsNew: (String) -> Unit = {},
+    onErrorShown: () -> Unit = {},
     onRefresh: () -> Unit = {},
     onLoadMore: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(ui.error) {
+        ui.error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            onErrorShown()
+        }
+    }
+
     var actionEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var editEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
@@ -185,13 +203,27 @@ fun JournalScreen(
     }
     }
 
-    // Action menu
+    // Action menu. An entry the server refused gets its own, which says why.
     actionEntry?.let { entry ->
-        ActionDialog(
-            onEdit = { actionEntry = null; editEntry = entry },
-            onDelete = { actionEntry = null; deleteEntry = entry },
-            onDismiss = { actionEntry = null },
-        )
+        if (entry.syncState == SyncState.FAILED) {
+            RefusedEntryDialog(
+                reason = refusalReason(entry.syncError),
+                // The original is gone from the server, so sending it again can't work;
+                // the words can still be kept as a new thought.
+                deletedElsewhere = entry.syncError?.contains("entry not found") == true,
+                onRetry = { actionEntry = null; onRetry(entry.id) },
+                onEdit = { actionEntry = null; editEntry = entry },
+                onSaveAsNew = { actionEntry = null; onSaveAsNew(entry.id) },
+                onDiscard = { actionEntry = null; onDiscard(entry.id) },
+                onDismiss = { actionEntry = null },
+            )
+        } else {
+            ActionDialog(
+                onEdit = { actionEntry = null; editEntry = entry },
+                onDelete = { actionEntry = null; deleteEntry = entry },
+                onDismiss = { actionEntry = null },
+            )
+        }
     }
 
     editEntry?.let { entry ->
@@ -354,6 +386,55 @@ private fun ActionDialog(onEdit: () -> Unit, onDelete: () -> Unit, onDismiss: ()
             DialogRow("Cancel", onDismiss, muted = true)
         }
     }
+}
+
+/**
+ * For an entry marked "couldn't sync". Its text is safe on the device; the choices are to
+ * send it again (edited or not), or to save the words as a new thought when the original
+ * was deleted elsewhere, or to let it go, which puts back the server's copy if the server
+ * has one.
+ */
+@Composable
+private fun RefusedEntryDialog(
+    reason: String,
+    deletedElsewhere: Boolean,
+    onRetry: () -> Unit,
+    onEdit: () -> Unit,
+    onSaveAsNew: () -> Unit,
+    onDiscard: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(GgBgSage).padding(8.dp),
+        ) {
+            Text(
+                text = reason,
+                fontFamily = Nunito,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = GgInkSoft,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).testTag("refused_reason"),
+            )
+            if (deletedElsewhere) {
+                DialogRow("Save as a new thought", onSaveAsNew)
+            } else {
+                DialogRow("Try again", onRetry)
+                DialogRow("Edit and try again", onEdit)
+            }
+            DialogRow("Discard this change", onDiscard, danger = true)
+            DialogRow("Cancel", onDismiss, muted = true)
+        }
+    }
+}
+
+/** The server's refusal, in the journal's words. */
+internal fun refusalReason(error: String?): String = when {
+    error == null -> "The garden didn't accept this thought."
+    "daily entry cap" in error ->
+        "That day already had all its thoughts. Try again tomorrow, or discard this one."
+    "entry not found" in error -> "This thought was deleted on another device."
+    else -> "The garden didn't accept this thought."
 }
 
 @Composable

@@ -67,7 +67,10 @@ fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
 )
 
 fun EntryEntity.toRow() =
-    GratitudeEntry(id, entryText, inputMethod, coinsAwarded, entryDate, createdAt, deletedAt, syncState = syncState)
+    GratitudeEntry(
+        id, entryText, inputMethod, coinsAwarded, entryDate, createdAt, deletedAt,
+        syncState = syncState, syncError = syncError,
+    )
 
 /** Microseconds since the epoch for an ISO-8601 timestamp with an offset. */
 internal fun epochMicros(timestamp: String): Long =
@@ -104,6 +107,10 @@ interface EntryDao {
 
     @Query("SELECT COUNT(*) FROM gratitude_entries WHERE userId = :userId AND entryDate = :day")
     suspend fun countOn(userId: String, day: String): Int
+
+    /** Entries the server refused, which keep their local version until the user decides. */
+    @Query("SELECT id FROM gratitude_entries WHERE userId = :userId AND syncState = 'FAILED'")
+    suspend fun refusedIds(userId: String): List<String>
 
     @Query("UPDATE gratitude_entries SET entryText = :text, syncState = :state WHERE id = :id")
     suspend fun setText(id: String, text: String, state: SyncState)

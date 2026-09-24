@@ -12,7 +12,9 @@ import com.gratitudegarden.app.data.SubmitResult
 import com.gratitudegarden.app.data.effectiveStreak
 import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
+import com.gratitudegarden.app.ui.NEEDS_CONNECTION_MESSAGE
 import com.gratitudegarden.app.ui.gardenApp
+import com.gratitudegarden.app.ui.isOffline
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
@@ -43,6 +45,8 @@ data class GardenUiState(
     val placing: Boolean = false,
     val message: String? = null,
     val showNotifPrompt: Boolean = false,
+    /** Writing works offline; the economy (plant, water, move, dig) doesn't. */
+    val online: Boolean = true,
 ) {
     val thoughtsLeft: Int get() = (dailyCap - usedToday).coerceAtLeast(0)
 }
@@ -72,6 +76,7 @@ class GardenViewModel(
         showIn(_ui, ownedSeeds()) { copy(ownedSeeds = it) }
         showIn(_ui, repo.observeEntriesTodayCount()) { copy(usedToday = it) }
         showIn(_ui, repo.observeDailyCap()) { copy(dailyCap = it) }
+        showIn(_ui, repo.isOnline) { copy(online = it) }
         refresh()
     }
 
@@ -82,14 +87,17 @@ class GardenViewModel(
 
     /**
      * Pull fresh data into Room. The screen already shows the last good copy, so a failure
-     * only costs a message, never the garden.
+     * only costs a message, never the garden. Offline it costs nothing at all: the banner
+     * already says so, and the refresh runs by itself when the connection returns.
      */
     fun refresh() {
         viewModelScope.launch {
             try {
                 repo.refreshAll()
             } catch (e: Exception) {
-                _ui.update { it.copy(message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
+                if (!isOffline(e)) {
+                    _ui.update { it.copy(message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
+                }
             }
         }
     }
@@ -147,8 +155,23 @@ class GardenViewModel(
         }
     }
 
+    /**
+     * The economy is online-only: say so up front rather than let the request fail. The
+     * screen disables what it can; this covers the rest (and the moment the network drops).
+     */
+    private fun needsConnection(): Boolean {
+        if (_ui.value.online) return false
+        _ui.update { it.copy(message = NEEDS_CONNECTION_MESSAGE) }
+        return true
+    }
+
+    /** A garden action the screen caught offline before it reached the ViewModel. */
+    fun onNeedsConnection() {
+        needsConnection()
+    }
+
     fun water(plantId: String) {
-        if (_ui.value.watering) return
+        if (_ui.value.watering || needsConnection()) return
         _ui.update { it.copy(watering = true) }
         viewModelScope.launch {
             try {
@@ -162,7 +185,7 @@ class GardenViewModel(
 
     /** Plant an owned seed into a specific cell (chosen by tapping soil or from the Shop). */
     fun plantSeedAt(itemId: String, x: Int, y: Int) {
-        if (_ui.value.placing) return
+        if (_ui.value.placing || needsConnection()) return
         _ui.update { it.copy(placing = true) }
         viewModelScope.launch {
             try {
@@ -176,7 +199,7 @@ class GardenViewModel(
 
     /** Move an existing plant to a new cell (drag-and-drop). */
     fun movePlant(plantId: String, x: Int, y: Int) {
-        if (_ui.value.placing) return
+        if (_ui.value.placing || needsConnection()) return
         _ui.update { it.copy(placing = true) }
         viewModelScope.launch {
             try {
@@ -190,7 +213,7 @@ class GardenViewModel(
 
     /** Dig up (remove) a plant from the garden. */
     fun digUp(plantId: String) {
-        if (_ui.value.placing) return
+        if (_ui.value.placing || needsConnection()) return
         _ui.update { it.copy(placing = true) }
         viewModelScope.launch {
             try {
