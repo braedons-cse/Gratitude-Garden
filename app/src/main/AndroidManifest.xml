@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ConnectivityMonitor: refresh when the connection comes back. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Android 13+ (API 33) requires a runtime grant to post notifications. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

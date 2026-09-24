@@ -2,6 +2,7 @@ package com.gratitudegarden.app.di
 
 import android.content.Context
 import com.gratitudegarden.app.BuildConfig
+import com.gratitudegarden.app.data.ConnectivityMonitor
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.local.GardenDatabase
 import io.github.jan.supabase.SupabaseClient
@@ -14,7 +15,7 @@ import kotlinx.serialization.json.Json
 
 /**
  * Manual service locator. Holds the singleton [SupabaseClient] (Auth + Postgrest),
- * the local [GardenDatabase], and the [GardenRepository].
+ * the local [GardenDatabase], the [ConnectivityMonitor], and the [GardenRepository].
  */
 class AppContainer(private val context: Context) {
 
@@ -37,5 +38,7 @@ class AppContainer(private val context: Context) {
     // Lazy so the file isn't opened until a repository first needs it.
     val database: GardenDatabase by lazy { GardenDatabase.create(context) }
 
-    val gardenRepository: GardenRepository by lazy { GardenRepository(supabase, database) }
+    val connectivity: ConnectivityMonitor by lazy { ConnectivityMonitor(context) }
+
+    val gardenRepository: GardenRepository by lazy { GardenRepository(supabase, database, connectivity) }
 }

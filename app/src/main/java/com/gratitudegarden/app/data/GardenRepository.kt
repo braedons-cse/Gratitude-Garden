@@ -1,11 +1,13 @@
 package com.gratitudegarden.app.data
 
+import android.util.Log
 import androidx.room.withTransaction
 import com.gratitudegarden.app.data.local.GardenDatabase
 import com.gratitudegarden.app.data.local.SettingsEntity
 import com.gratitudegarden.app.data.local.SyncCursorEntity
 import com.gratitudegarden.app.data.local.toEntity
 import com.gratitudegarden.app.data.local.toRow
+import com.gratitudegarden.app.util.LogTags
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
@@ -172,6 +174,7 @@ private data class NotifPromptRow(
 class GardenRepository(
     private val client: SupabaseClient,
     private val db: GardenDatabase,
+    connectivity: ConnectivityMonitor,
 ) {
 
     val sessionStatus: StateFlow<SessionStatus> get() = client.auth.sessionStatus
@@ -337,6 +340,21 @@ class GardenRepository(
 
     private var fullRefresh: Deferred<Unit>? = null
     @Volatile private var lastFullRefreshAt: TimeMark? = null
+
+    init {
+        // Coming back online refreshes on its own, so a screen that loaded offline doesn't
+        // stay stale until the user writes something or restarts the app. This runs in a
+        // scope of its own: sign-out cancels [scope]'s refreshes, but must not stop this.
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            connectivity.isOnline.reconnections().collect {
+                try {
+                    refreshAll()
+                } catch (e: Exception) {
+                    Log.w(LogTags.APP_LOGIC, "Refresh after reconnecting failed", e)
+                }
+            }
+        }
+    }
 
     /**
      * Refresh every table from Supabase. Callers that overlap share one run, and unless
