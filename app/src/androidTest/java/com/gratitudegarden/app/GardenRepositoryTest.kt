@@ -314,8 +314,23 @@ class GardenRepositoryTest {
     fun onlineAnEntryIsPlantedStraightAway() = runBlocking {
         signIn()
 
-        assertEquals(SubmitResult.Planted(5), repo.submitEntry("a good friend", voice = false))
+        assertEquals(SubmitResult.Planted(5, xp = 10), repo.submitEntry("a good friend", voice = false))
         assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun theDaysFirstEntryPaysTheMostXpAndTheLevelFollows() = runBlocking {
+        fake.xp = 25
+        signIn()
+        assertEquals(1, repo.observeProfile().first()?.level)
+
+        assertEquals(SubmitResult.Planted(5, xp = 10), repo.submitEntry("first today", voice = false))
+        assertEquals(SubmitResult.Planted(5, xp = 2), repo.submitEntry("and another", voice = false))
+
+        assertEquals(listOf(2, 10), journal().map { it.xpAwarded })
+        val profile = repo.observeProfile().first()
+        assertEquals("the refresh after delivery brought the XP", 37, profile?.xp)
+        assertEquals("30 XP is level 2", 2, profile?.level)
     }
 
     @Test
@@ -368,7 +383,9 @@ class GardenRepositoryTest {
 
         assertEquals(1, fake.entries.size)
         assertEquals("the replay was recognised, not paid again", 1, fake.paidSubmits)
+        assertEquals("nor given XP again", 10, fake.xp)
         assertEquals(SyncState.SYNCED, journal().single().syncState)
+        assertEquals(10, journal().single().xpAwarded)
     }
 
     @Test

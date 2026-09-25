@@ -34,6 +34,8 @@ data class EntryEntity(
     val inputMethod: String,
     /** Null until the server has answered: it decides the reward. */
     val coinsAwarded: Int?,
+    /** Null until the server has answered, like [coinsAwarded]. */
+    val xpAwarded: Int?,
     /**
      * Local day the entry counts for, `yyyy-MM-dd`. For an entry still [SyncState.PENDING],
      * the day predicted on the device ([com.gratitudegarden.app.data.entryDay]); the
@@ -60,6 +62,7 @@ fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
     entryText = entryText,
     inputMethod = inputMethod,
     coinsAwarded = coinsAwarded,
+    xpAwarded = xpAwarded,
     entryDate = entryDate,
     createdAt = createdAt,
     createdAtMicros = epochMicros(createdAt),
@@ -68,7 +71,7 @@ fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
 
 fun EntryEntity.toRow() =
     GratitudeEntry(
-        id, entryText, inputMethod, coinsAwarded, entryDate, createdAt, deletedAt,
+        id, entryText, inputMethod, coinsAwarded, xpAwarded, entryDate, createdAt, deletedAt,
         syncState = syncState, syncError = syncError,
     )
 
@@ -123,13 +126,13 @@ interface EntryDao {
 
     /**
      * What the server decided about an entry that still has local changes queued behind
-     * the one it just answered: the reward, the day, the time. The text stays local.
+     * the one it just answered: the rewards, the day, the time. The text stays local.
      */
     @Query(
-        "UPDATE gratitude_entries SET coinsAwarded = :coins, entryDate = :day, " +
+        "UPDATE gratitude_entries SET coinsAwarded = :coins, xpAwarded = :xp, entryDate = :day, " +
             "createdAt = :createdAt, createdAtMicros = :createdAtMicros WHERE id = :id"
     )
-    suspend fun setServerFields(id: String, coins: Int?, day: String, createdAt: String, createdAtMicros: Long)
+    suspend fun setServerFields(id: String, coins: Int?, xp: Int?, day: String, createdAt: String, createdAtMicros: Long)
 
     /** An entry that never reached the server, deleted before it could. */
     @Query("DELETE FROM gratitude_entries WHERE id = :id")

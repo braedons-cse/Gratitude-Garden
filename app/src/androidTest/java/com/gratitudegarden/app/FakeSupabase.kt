@@ -1,5 +1,8 @@
 package com.gratitudegarden.app
 
+import com.gratitudegarden.app.data.XP_EXTRA_ENTRY
+import com.gratitudegarden.app.data.XP_FIRST_ENTRY
+import com.gratitudegarden.app.data.levelForXp
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
@@ -66,6 +69,9 @@ class FakeSupabase {
     var displayName = "Tester"
     var balance = 12
 
+    /** Earned as the server pays it: the day's first entry, then the extras. Level follows. */
+    @Volatile var xp = 0
+
     /** Banked freezes; `freeze_grant_month` is always this month, so there's no pending free one. */
     @Volatile var freezes = 0
     val frozenDays = CopyOnWriteArrayList<String>()
@@ -84,6 +90,7 @@ class FakeSupabase {
         var updatedAt: String,
         var deletedAt: String? = null,
         val coins: Int = 5,
+        val xp: Int = XP_FIRST_ENTRY,
     )
 
     /** Add [count] entries dated today; ids and timestamps ascend. */
@@ -141,15 +148,18 @@ class FakeSupabase {
                     refused(text) -> reply(error("entry text required"), HttpStatusCode.BadRequest)
                     else -> {
                         val writtenAt = Instant.parse(arg("p_written_at")!!)
+                        val day = writtenAt.atZone(ZoneId.of(arg("p_time_zone")!!)).toLocalDate().toString()
                         val entry = Entry(
                             id = id,
                             text = text,
-                            entryDate = writtenAt.atZone(ZoneId.of(arg("p_time_zone")!!)).toLocalDate().toString(),
+                            entryDate = day,
                             createdAt = format.format(writtenAt),
                             updatedAt = nextStamp(),
+                            xp = if (entries.none { it.entryDate == day }) XP_FIRST_ENTRY else XP_EXTRA_ENTRY,
                         )
                         entries += entry
                         balance += entry.coins
+                        xp += entry.xp
                         paidSubmits++
                         reply(json(entry))
                     }
@@ -201,7 +211,7 @@ class FakeSupabase {
     }
 
     private fun table(name: String, params: Parameters): String = when (name) {
-        "profiles" -> """[{"display_name":"$displayName","level":1,"xp":0,"is_admin":false}]"""
+        "profiles" -> """[{"display_name":"$displayName","level":${levelForXp(xp)},"xp":$xp,"is_admin":false}]"""
         "coin_wallets" -> """[{"balance":$balance}]"""
         "user_stats" -> """[{"total_entries":${entries.count { it.deletedAt == null }},"current_streak":2,"longest_streak":5,""" +
             """"last_entry_date":"$today","streak_freezes":$freezes,"freeze_grant_month":"${LocalDate.now().withDayOfMonth(1)}"}]"""
@@ -240,7 +250,7 @@ class FakeSupabase {
     }
 
     private fun json(e: Entry) =
-        """{"id":"${e.id}","entry_text":"${e.text}","input_method":"text","coins_awarded":${e.coins},""" +
+        """{"id":"${e.id}","entry_text":"${e.text}","input_method":"text","coins_awarded":${e.coins},"xp_awarded":${e.xp},""" +
             """"entry_date":"${e.entryDate}","created_at":"${e.createdAt}","updated_at":"${e.updatedAt}",""" +
             """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"}}"""
 

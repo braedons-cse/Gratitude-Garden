@@ -72,6 +72,8 @@ data class GratitudeEntry(
     @SerialName("input_method") val inputMethod: String,
     /** Null while the entry waits to sync: the server decides the reward. */
     @SerialName("coins_awarded") val coinsAwarded: Int? = null,
+    /** Null while the entry waits to sync, like [coinsAwarded]. */
+    @SerialName("xp_awarded") val xpAwarded: Int? = null,
     @SerialName("entry_date") val entryDate: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
@@ -85,8 +87,8 @@ data class GratitudeEntry(
 
 /** What became of a submitted entry. In every case it is in the journal. */
 sealed interface SubmitResult {
-    /** The server has it. [coins] is null only if its reply couldn't be read. */
-    data class Planted(val coins: Int?) : SubmitResult
+    /** The server has it. [coins] and [xp] are null only if its reply couldn't be read. */
+    data class Planted(val coins: Int?, val xp: Int? = null) : SubmitResult
 
     /** Saved on the device; it goes to the server once it can. */
     data object Saved : SubmitResult
@@ -708,6 +710,7 @@ class GardenRepository(
                         entryText = text,
                         inputMethod = inputMethod,
                         coinsAwarded = null,
+                        xpAwarded = null,
                         entryDate = day,
                         createdAt = writtenAt,
                         createdAtMicros = epochMicros(writtenAt),
@@ -734,7 +737,7 @@ class GardenRepository(
         currentCoroutineContext().ensureActive()
         val entry = db.entryDao().get(id)
         return when (entry?.syncState) {
-            SyncState.SYNCED -> SubmitResult.Planted(entry.coinsAwarded)
+            SyncState.SYNCED -> SubmitResult.Planted(entry.coinsAwarded, entry.xpAwarded)
             SyncState.FAILED -> SubmitResult.Refused(entry.syncError.orEmpty())
             else -> SubmitResult.Saved
         }
@@ -970,7 +973,7 @@ class GardenRepository(
             // Later changes are still on their way: take what only the server knows and
             // keep the local text.
             moreQueued -> if (row != null) {
-                db.entryDao().setServerFields(row.id, row.coinsAwarded, row.entryDate, row.createdAt, epochMicros(row.createdAt))
+                db.entryDao().setServerFields(row.id, row.coinsAwarded, row.xpAwarded, row.entryDate, row.createdAt, epochMicros(row.createdAt))
             }
             row != null -> db.entryDao().upsert(row.toEntity(uid))
             // A delete, or an answer we couldn't read: the next entry sync brings the
