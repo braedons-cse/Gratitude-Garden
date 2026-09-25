@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,15 +40,21 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gratitudegarden.app.data.Item
+import com.gratitudegarden.app.data.MAX_STREAK_FREEZES
+import com.gratitudegarden.app.data.STREAK_FREEZE_PRICE
 import com.gratitudegarden.app.ui.shop.ShopUiState
 import com.gratitudegarden.app.ui.shop.ShopViewModel
 import com.gratitudegarden.app.ui.sprites.CoinIcon
+import com.gratitudegarden.app.ui.sprites.GgIcon
+import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.Plant
 import com.gratitudegarden.app.ui.sprites.PlantPalette
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.Nunito
 import com.gratitudegarden.app.ui.theme.GgBgCream
 import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgFrost
+import com.gratitudegarden.app.ui.theme.GgFrostLight
 import com.gratitudegarden.app.ui.theme.GgInk
 import com.gratitudegarden.app.ui.theme.GgInkMuted
 import com.gratitudegarden.app.ui.theme.GgInkSoft
@@ -64,6 +71,7 @@ fun ShopRoute(onRequestPlant: (String) -> Unit = {}) {
     ShopScreen(
         ui = ui,
         onBuy = vm::buy,
+        onBuyFreeze = vm::buyFreeze,
         // "Plant" now sends you to the Garden to choose the spot.
         onPlant = { item -> onRequestPlant(item.id) },
         onMessageShown = vm::consumeMessage,
@@ -79,6 +87,7 @@ fun ShopScreen(
     onPlant: (Item) -> Unit,
     onMessageShown: () -> Unit,
     onRefresh: () -> Unit = {},
+    onBuyFreeze: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var tab by remember { mutableStateOf(Tab.Seeds) }
@@ -122,6 +131,9 @@ fun ShopScreen(
         }
 
         Spacer(Modifier.height(14.dp))
+        FreezeOffer(ui = ui, onBuy = onBuyFreeze)
+
+        Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Tab.entries.forEach { t ->
                 TabPill(label = t.label, selected = tab == t, onClick = { tab = t })
@@ -147,6 +159,49 @@ fun ShopScreen(
 
         Spacer(Modifier.height(24.dp))
     }
+    }
+}
+
+/** Streak freezes sit above the tabs: they're for the streak, not the garden. */
+@Composable
+private fun FreezeOffer(ui: ShopUiState, onBuy: () -> Unit) {
+    val full = ui.freezes >= MAX_STREAK_FREEZES
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White)
+            .padding(12.dp)
+            .testTag("shop_freeze_offer"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(GgFrostLight),
+            contentAlignment = Alignment.Center,
+        ) {
+            GgIcon(name = GgIconName.Snowflake, color = GgFrost, size = 28.dp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Streak freeze", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GgInk)
+            Text(
+                if (full) "You have $MAX_STREAK_FREEZES/$MAX_STREAK_FREEZES — fully stocked."
+                else "Forgives a missed day. You have ${ui.freezes}/$MAX_STREAK_FREEZES.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = GgInkSoft,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Box(modifier = Modifier.width(84.dp)) {
+            ShopButton(
+                text = if (ui.buyingFreeze) "…" else "🪙 $STREAK_FREEZE_PRICE",
+                filled = true,
+                enabled = ui.online && !full && !ui.buyingFreeze,
+                onClick = onBuy,
+            )
+        }
     }
 }
 

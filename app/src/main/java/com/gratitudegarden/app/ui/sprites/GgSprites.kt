@@ -43,7 +43,7 @@ import kotlin.math.absoluteValue
 // ── Stroke / fill icons ──────────────────────────────────────────
 // Recreated from the design's SVG path data (24×24 viewport).
 
-enum class GgIconName { Mail, Lock, Eye, User, Mic, Flame, Home, Shop, Leaf, Cog, Check, Back }
+enum class GgIconName { Mail, Lock, Eye, User, Mic, Flame, Snowflake, Home, Shop, Leaf, Cog, Check, Back }
 
 private fun ImageVector.Builder.strokePath(d: String, color: Color, width: Float = 1.9f) {
     addPath(
@@ -80,6 +80,12 @@ private fun buildIcon(name: GgIconName, color: Color): ImageVector {
         GgIconName.Back -> b.strokePath("M15 6l-6 6 6 6", color)
         GgIconName.Leaf -> b.fillPath("M4 20 C4 10 12 4 20 4 C20 12 14 20 4 20 Z", color)
         GgIconName.Flame -> b.fillPath("M12 2 C12 2 7 7 7 12 a5 5 0 0 0 10 0 C17 9 14 7 12 2 Z", color)
+        GgIconName.Snowflake -> b.strokePath(
+            "M12 3v18 M4.2 7.5l15.6 9 M4.2 16.5l15.6-9 " +
+                "M9.5 4.5L12 7l2.5-2.5 M9.5 19.5L12 17l2.5 2.5",
+            color,
+            width = 2.1f,
+        )
         GgIconName.Mic -> {
             b.fillPath("M9 6 a3 3 0 0 1 6 0 v6 a3 3 0 0 1 -6 0 z", color)
             b.strokePath("M6 12a6 6 0 0 0 12 0 M12 18v3", color)

@@ -16,3 +16,7 @@ val GgAccent = Color(0xFFF4A261)
 val GgAccentDeep = Color(0xFFD88040)
 val GgSoil = Color(0xFF8B6F47)
 val GgSoilDeep = Color(0xFF5C4632)
+
+// Streak freezes: the one cool colour, so a frozen day reads apart from a written one.
+val GgFrost = Color(0xFF5B94BD)
+val GgFrostLight = Color(0xFFDCEAF4)

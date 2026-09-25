@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -107,6 +108,7 @@ import com.gratitudegarden.app.ui.theme.GgAccent
 import com.gratitudegarden.app.ui.theme.GgAccentDeep
 import com.gratitudegarden.app.ui.theme.GgBgCream
 import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgFrost
 import com.gratitudegarden.app.ui.theme.GgInk
 import com.gratitudegarden.app.ui.theme.GgInkMuted
 import com.gratitudegarden.app.ui.theme.GgInkSoft
@@ -202,13 +204,7 @@ fun GardenScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Chip {
-                GgIcon(name = GgIconName.Flame, color = GgAccent, size = 16.dp)
-                Spacer(Modifier.size(5.dp))
-                Text("$animatedStreak", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
-                Spacer(Modifier.size(3.dp))
-                Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
-            }
+            StreakChip(days = animatedStreak, held = ui.streakHeld)
             Text(
                 text = title,
                 fontFamily = Caprasimo,
@@ -425,14 +421,28 @@ private fun NotifPromptDialog(
 }
 
 @Composable
-private fun Chip(content: @Composable () -> Unit) {
+private fun Chip(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(999.dp))
             .background(Color.White.copy(alpha = 0.7f))
             .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) { content() }
+}
+
+/** The streak count; a snowflake instead of the flame while freezes are holding it. */
+@Composable
+private fun StreakChip(days: Int, held: Boolean) {
+    val label = if (held) "$days day streak, held by a streak freeze" else "$days day streak"
+    Chip(modifier = Modifier.clearAndSetSemantics { contentDescription = label }) {
+        if (held) GgIcon(name = GgIconName.Snowflake, color = GgFrost, size = 16.dp)
+        else GgIcon(name = GgIconName.Flame, color = GgAccent, size = 16.dp)
+        Spacer(Modifier.size(5.dp))
+        Text("$days", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
+        Spacer(Modifier.size(3.dp))
+        Text("days", fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
+    }
 }
 
 @Composable

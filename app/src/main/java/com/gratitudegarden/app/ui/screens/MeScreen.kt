@@ -49,6 +49,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,6 +65,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gratitudegarden.app.data.MAX_STREAK_FREEZES
 import com.gratitudegarden.app.ui.admin.AdminTools
 import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
@@ -80,6 +82,8 @@ import com.gratitudegarden.app.ui.theme.Nunito
 import com.gratitudegarden.app.ui.theme.GgAccent
 import com.gratitudegarden.app.ui.theme.GgBgCream
 import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgFrost
+import com.gratitudegarden.app.ui.theme.GgFrostLight
 import com.gratitudegarden.app.ui.theme.GgInk
 import com.gratitudegarden.app.ui.theme.GgInkMuted
 import com.gratitudegarden.app.ui.theme.GgInkSoft
@@ -218,7 +222,8 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             StatCard(modifier = Modifier.weight(1f), value = "${ui.streak}", label = "Day streak") {
-                GgIcon(name = GgIconName.Flame, color = GgAccent, size = 22.dp)
+                if (ui.streakHeld) GgIcon(name = GgIconName.Snowflake, color = GgFrost, size = 22.dp)
+                else GgIcon(name = GgIconName.Flame, color = GgAccent, size = 22.dp)
             }
             StatCard(modifier = Modifier.weight(1f), value = "${ui.totalEntries}", label = "Thoughts") {
                 GgIcon(name = GgIconName.Mic, color = GgPrimaryDeep, size = 20.dp)
@@ -227,6 +232,9 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                 CoinIcon(size = 22.dp)
             }
         }
+
+        Spacer(Modifier.height(12.dp))
+        FreezeCard(freezes = ui.freezes)
 
         Spacer(Modifier.height(28.dp))
 
@@ -737,6 +745,52 @@ private fun StatCard(
         icon()
         Text(text = value, fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GgInk)
         Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GgInkMuted)
+    }
+}
+
+/** How many streak freezes are on hand, and where more come from. */
+@Composable
+private fun FreezeCard(freezes: Int) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(36.dp).clip(CircleShape).background(GgFrostLight),
+            contentAlignment = Alignment.Center,
+        ) {
+            GgIcon(name = GgIconName.Snowflake, color = GgFrost, size = 20.dp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Streak freezes",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 14.sp,
+                color = GgInk,
+            )
+            Text(
+                text = "A missed day is forgiven. One free each month; more in the Shop.",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = GgInkSoft,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = "$freezes/$MAX_STREAK_FREEZES",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 18.sp,
+            color = GgFrost,
+        )
     }
 }
 

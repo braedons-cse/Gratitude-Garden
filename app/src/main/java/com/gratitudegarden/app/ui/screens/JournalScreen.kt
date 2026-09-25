@@ -63,6 +63,8 @@ import com.gratitudegarden.app.ui.theme.Nunito
 import com.gratitudegarden.app.ui.theme.GgAccent
 import com.gratitudegarden.app.ui.theme.GgAccentDeep
 import com.gratitudegarden.app.ui.theme.GgBgSage
+import com.gratitudegarden.app.ui.theme.GgFrost
+import com.gratitudegarden.app.ui.theme.GgFrostLight
 import com.gratitudegarden.app.ui.theme.GgInk
 import com.gratitudegarden.app.ui.theme.GgInkMuted
 import com.gratitudegarden.app.ui.theme.GgInkSoft
@@ -151,14 +153,17 @@ fun JournalScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text("Journal", fontFamily = Caprasimo, fontSize = 26.sp, color = GgPrimaryDeep)
+                val streakLabel = "${ui.streak} day streak" + if (ui.streakHeld) ", held by a streak freeze" else ""
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
                         .background(Color.White.copy(alpha = 0.8f))
-                        .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                        .padding(start = 8.dp, end = 12.dp, top = 6.dp, bottom = 6.dp)
+                        .clearAndSetSemantics { contentDescription = streakLabel },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GgIcon(name = GgIconName.Flame, color = GgAccent, size = 16.dp)
+                    if (ui.streakHeld) GgIcon(name = GgIconName.Snowflake, color = GgFrost, size = 16.dp)
+                    else GgIcon(name = GgIconName.Flame, color = GgAccent, size = 16.dp)
                     Spacer(Modifier.size(5.dp))
                     Text("${ui.streak}", fontFamily = Nunito, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = GgInk)
                     Spacer(Modifier.size(3.dp))
@@ -173,7 +178,7 @@ fun JournalScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            WeekStrip(entryDates = ui.entryDates)
+            WeekStrip(entryDates = ui.entryDates, frozenDates = ui.frozenDates)
             Spacer(Modifier.height(14.dp))
         }
 
@@ -243,7 +248,7 @@ fun JournalScreen(
 }
 
 @Composable
-private fun WeekStrip(entryDates: Set<String>) {
+private fun WeekStrip(entryDates: Set<String>, frozenDates: Set<String>) {
     val today = remember { LocalDate.now() }
     val days = remember(entryDates) { (6 downTo 0).map { today.minusDays(it.toLong()) } }
     Row(
@@ -256,10 +261,16 @@ private fun WeekStrip(entryDates: Set<String>) {
     ) {
         days.forEach { day ->
             val on = entryDates.contains(day.toString())
+            // A written day wins: a late entry on a frozen day hands the freeze back.
+            val frozen = !on && frozenDates.contains(day.toString())
             val isToday = day == today
             val dayName = day.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
             val dayLabel = (if (isToday) "Today, $dayName" else dayName) +
-                if (on) ", entry logged" else ", no entry"
+                when {
+                    on -> ", entry logged"
+                    frozen -> ", streak frozen"
+                    else -> ", no entry"
+                }
             // Merge the weekday letter + dot into one spoken label so TalkBack reads
             // "Monday, entry logged" instead of just the letter "M".
             Column(
@@ -275,10 +286,17 @@ private fun WeekStrip(entryDates: Set<String>) {
                     color = if (isToday) GgPrimaryDeep else GgInkMuted,
                 )
                 Box(
-                    modifier = Modifier.size(26.dp).clip(CircleShape).background(if (on) GgPrimary else GgBgSage),
+                    modifier = Modifier.size(26.dp).clip(CircleShape).background(
+                        when {
+                            on -> GgPrimary
+                            frozen -> GgFrostLight
+                            else -> GgBgSage
+                        },
+                    ),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (on) GgIcon(name = GgIconName.Check, color = Color(0xFFFAF5E8), size = 14.dp)
+                    else if (frozen) GgIcon(name = GgIconName.Snowflake, color = GgFrost, size = 14.dp)
                 }
             }
         }
