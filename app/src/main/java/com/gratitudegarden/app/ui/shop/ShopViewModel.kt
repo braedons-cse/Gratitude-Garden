@@ -6,6 +6,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
+import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.ui.NEEDS_CONNECTION_MESSAGE
 import com.gratitudegarden.app.ui.isOffline
 import com.gratitudegarden.app.ui.repo
@@ -25,6 +26,9 @@ data class ShopUiState(
     val seeds: List<Item> = emptyList(),
     val owned: Set<String> = emptySet(),
     val busyItemId: String? = null,
+    /** Streak freezes available, this month's free one included. */
+    val freezes: Int = 0,
+    val buyingFreeze: Boolean = false,
     val message: String? = null,
     /** Buying and planting are online-only. */
     val online: Boolean = true,
@@ -40,6 +44,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
         showIn(_ui, repo.observeInventory()) { copy(owned = it) }
         showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
         showIn(_ui, repo.observeProfile()) { copy(level = it?.level ?: 1) }
+        showIn(_ui, repo.observeStats()) { copy(freezes = it?.streakNow?.freezes ?: 0) }
         showIn(_ui, repo.isOnline) { copy(online = it) }
         viewModelScope.launch { pull(force = false) }
     }
@@ -88,6 +93,19 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
         }
     }
 
+    fun buyFreeze() {
+        if (_ui.value.buyingFreeze || needsConnection()) return
+        _ui.update { it.copy(buyingFreeze = true) }
+        viewModelScope.launch {
+            try {
+                repo.buyStreakFreeze()
+                _ui.update { it.copy(buyingFreeze = false, message = "Streak freeze ready ❄️") }
+            } catch (e: Exception) {
+                _ui.update { it.copy(buyingFreeze = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
+            }
+        }
+    }
+
     fun plant(item: Item) {
         if (_ui.value.busyItemId != null || needsConnection()) return
         _ui.update { it.copy(busyItemId = item.id) }
@@ -114,6 +132,7 @@ class ShopViewModel(private val repo: GardenRepository) : ViewModel() {
     private fun friendly(m: String): String? = when {
         "insufficient coins" in m -> "Not enough coins yet — plant more kind thoughts."
         "level" in m && "required" in m -> "You need a higher level to grow this seed."
+        "streak freeze limit" in m -> "You already have all the freezes you can hold."
         else -> null
     }
 

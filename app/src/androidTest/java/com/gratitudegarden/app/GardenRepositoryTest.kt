@@ -34,6 +34,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.Timeout
 import org.junit.runner.RunWith
+import java.time.LocalDate
 import kotlin.time.ExperimentalTime
 
 /**
@@ -124,6 +125,52 @@ class GardenRepositoryTest {
         assertEquals(12, repo.observeWallet().first()?.balance)
         assertEquals("My Garden", repo.observeGarden().first()?.name)
         assertEquals(2, repo.observePlants().first().size)
+    }
+
+    @Test
+    fun refreshBringsTheFreezesAndTheFrozenDays() = runBlocking {
+        val yesterday = LocalDate.now().minusDays(1).toString()
+        val longAgo = LocalDate.now().minusDays(30).toString()
+        fake.freezes = 1
+        fake.frozenDays += listOf(yesterday, longAgo)
+        signIn()
+
+        assertEquals(1, repo.observeStats().first()?.streakFreezes)
+        // The week strip only asks for the last seven days.
+        assertEquals(setOf(yesterday), repo.observeRecentFrozenDates().first())
+
+        // A frozen day refunded on the server (a late entry filled it) goes locally too.
+        fake.frozenDays.remove(yesterday)
+        repo.refreshAll(force = true)
+        assertEquals(emptySet<String>(), repo.observeRecentFrozenDates().first())
+    }
+
+    @Test
+    fun buyingAFreezeCallsTheServerOnceAndShowsBothBalances() = runBlocking {
+        fake.balance = 60
+        signIn()
+
+        repo.buyStreakFreeze()
+
+        assertEquals(1, fake.rpcCalls("buy_streak_freeze").size)
+        assertEquals(10, repo.observeWallet().first()?.balance)
+        assertEquals(1, repo.observeStats().first()?.streakFreezes)
+    }
+
+    @Test
+    fun aRefusedFreezePurchaseChangesNothing() = runBlocking {
+        fake.balance = 60
+        fake.freezes = 2
+        signIn()
+
+        try {
+            repo.buyStreakFreeze()
+            fail("the server refuses a third freeze")
+        } catch (_: Exception) {
+        }
+
+        assertEquals(60, repo.observeWallet().first()?.balance)
+        assertEquals(2, repo.observeStats().first()?.streakFreezes)
     }
 
     @Test

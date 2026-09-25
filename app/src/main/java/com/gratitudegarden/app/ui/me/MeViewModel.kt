@@ -9,7 +9,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
-import com.gratitudegarden.app.data.effectiveStreak
+import com.gratitudegarden.app.data.StreakStatus
+import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.notifications.ReminderNotifications
 import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
@@ -28,6 +29,10 @@ data class MeUiState(
     val level: Int = 1,
     val coins: Int = 0,
     val streak: Int = 0,
+    /** Days were missed and freezes cover them; the next entry spends them. */
+    val streakHeld: Boolean = false,
+    /** Streak freezes available, this month's free one included. */
+    val freezes: Int = 0,
     val totalEntries: Int = 0,
     val isAdmin: Boolean = false,
     val deleting: Boolean = false,
@@ -67,7 +72,13 @@ class MeViewModel(
         }
         showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
         showIn(_ui, repo.observeStats()) {
-            copy(streak = it?.effectiveStreak ?: 0, totalEntries = it?.totalEntries ?: 0)
+            val s = it?.streakNow ?: StreakStatus()
+            copy(
+                streak = s.days,
+                streakHeld = s.heldByFreeze,
+                freezes = s.freezes,
+                totalEntries = it?.totalEntries ?: 0,
+            )
         }
         showIn(_ui, repo.observeUnsyncedCount()) { copy(unsynced = it) }
         viewModelScope.launch { loadDeviceSettings() }

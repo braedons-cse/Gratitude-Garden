@@ -6,7 +6,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.GardenRepository
-import com.gratitudegarden.app.data.effectiveStreak
+import com.gratitudegarden.app.data.StreakStatus
+import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.ui.isOffline
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
@@ -29,8 +30,12 @@ data class JournalUiState(
     val endReached: Boolean = false,
     val totalEntries: Int = 0,
     val streak: Int = 0,
+    /** Days were missed and freezes cover them; the next entry spends them. */
+    val streakHeld: Boolean = false,
     val sections: List<JournalSection> = emptyList(),
     val entryDates: Set<String> = emptySet(),
+    /** Days in the week strip that a streak freeze covered. */
+    val frozenDates: Set<String> = emptySet(),
     val error: String? = null,
 )
 
@@ -50,7 +55,8 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
 
     init {
         showIn(_ui, repo.observeStats()) {
-            copy(totalEntries = it?.totalEntries ?: 0, streak = it?.effectiveStreak ?: 0)
+            val s = it?.streakNow ?: StreakStatus()
+            copy(totalEntries = it?.totalEntries ?: 0, streak = s.days, streakHeld = s.heldByFreeze)
         }
         // One row past the limit tells whether there is anything left to show.
         val page = limit.flatMapLatest { n -> repo.observeEntries(n + 1).map { n to it } }
@@ -64,6 +70,7 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
         showIn(_ui, repo.observeRecentEntryDates()) { dates ->
             copy(entryDates = dates.map { atMostToday(it) }.toSet())
         }
+        showIn(_ui, repo.observeRecentFrozenDates()) { copy(frozenDates = it) }
         viewModelScope.launch { pull(force = false) }
     }
 

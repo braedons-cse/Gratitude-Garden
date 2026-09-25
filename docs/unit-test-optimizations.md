@@ -11,7 +11,7 @@ of code under test. The tests run on the host in milliseconds:
 | # | Code under test | File | Test | Optimization |
 |---|-----------------|------|------|--------------|
 | 1 | `ReminderNotifications.pickMessageIndex` | `notifications/ReminderNotifications.kt` | `PickMessageIndexTest` | Allocation-free O(1) pick (no per-call `List`) |
-| 2 | `UserStatsRow.effectiveStreakOn` | `data/GardenRepository.kt` | `EffectiveStreakTest` | Clock injected → deterministic & testable |
+| 2 | `UserStatsRow.effectiveStreakOn` (now `streakOn`) | `data/GardenRepository.kt` | `EffectiveStreakTest` (now `StreakStatusTest`) | Clock injected → deterministic & testable |
 | 3 | `formatTime` | `util/TimeFormat.kt` | `FormatTimeTest` | Extracted to a pure util + locale bug fixed |
 
 **Result:** 9 test methods across the 3 features, all passing (0 failures, 0 skipped).
@@ -111,6 +111,12 @@ before.
 **Coverage.** `EffectiveStreakTest` pins a fixed `today` and checks: alive today, alive
 yesterday, broken after a missed day, `null` date → 0, unparseable date → 0 (no crash),
 and a future date → 0.
+
+**Since then.** Streak freezes (roadmap 1.3) turned the result into a `StreakStatus`: a run
+is also alive while the freezes on hand cover every missed day. The function is now
+`streakOn(today)`, the wrapper `streakNow`, and the test `StreakStatusTest`, which keeps
+the cases above and adds the freeze ones. The injected clock is what made the monthly free
+freeze testable too.
 
 ---
 

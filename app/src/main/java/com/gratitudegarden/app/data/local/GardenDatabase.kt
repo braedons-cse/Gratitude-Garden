@@ -19,6 +19,7 @@ import androidx.room.RoomDatabase
         WalletEntity::class,
         SettingsEntity::class,
         StatsEntity::class,
+        FrozenDayEntity::class,
         GardenEntity::class,
         PlantEntity::class,
         ItemEntity::class,

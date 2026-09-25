@@ -65,6 +65,10 @@ class FakeSupabase {
 
     var displayName = "Tester"
     var balance = 12
+
+    /** Banked freezes; `freeze_grant_month` is always this month, so there's no pending free one. */
+    @Volatile var freezes = 0
+    val frozenDays = CopyOnWriteArrayList<String>()
     var gardenName: String? = "My Garden"
     val plantIds = CopyOnWriteArrayList(listOf("p1", "p2"))
     val ownedItemIds = CopyOnWriteArrayList(listOf("i1"))
@@ -114,11 +118,9 @@ class FakeSupabase {
         if (offline) throw IOException("offline")
         if (rpcsFail && path.startsWith("/rest/v1/rpc/")) throw IOException("offline")
 
-        val args = if (path.startsWith("/rest/v1/rpc/")) {
-            Json.parseToJsonElement(request.body.toByteArray().decodeToString()).jsonObject
-        } else {
-            JsonObject(emptyMap())
-        }
+        // An RPC without parameters (buy_streak_freeze) goes out with an empty body.
+        val body = if (path.startsWith("/rest/v1/rpc/")) request.body.toByteArray().decodeToString() else ""
+        val args = if (body.isNotBlank()) Json.parseToJsonElement(body).jsonObject else JsonObject(emptyMap())
         fun arg(name: String) = args[name]?.jsonPrimitive?.contentOrNull
 
         // Respond, unless the answer is being lost: then the work is done and the reply isn't.
@@ -180,6 +182,15 @@ class FakeSupabase {
                     reply("", HttpStatusCode.NoContent)
                 }
             }
+            path == "/rest/v1/rpc/buy_streak_freeze" -> when {
+                freezes >= 2 -> reply(error("streak freeze limit reached"), HttpStatusCode.BadRequest)
+                balance < 50 -> reply(error("insufficient coins (need 50, have $balance)"), HttpStatusCode.BadRequest)
+                else -> {
+                    balance -= 50
+                    freezes++
+                    reply("$freezes")
+                }
+            }
             path.startsWith("/rest/v1/") -> respond(
                 content = table(path.removePrefix("/rest/v1/"), request.url.parameters),
                 status = HttpStatusCode.OK,
@@ -192,7 +203,9 @@ class FakeSupabase {
     private fun table(name: String, params: Parameters): String = when (name) {
         "profiles" -> """[{"display_name":"$displayName","level":1,"xp":0,"is_admin":false}]"""
         "coin_wallets" -> """[{"balance":$balance}]"""
-        "user_stats" -> """[{"total_entries":${entries.count { it.deletedAt == null }},"current_streak":2,"longest_streak":5,"last_entry_date":"$today"}]"""
+        "user_stats" -> """[{"total_entries":${entries.count { it.deletedAt == null }},"current_streak":2,"longest_streak":5,""" +
+            """"last_entry_date":"$today","streak_freezes":$freezes,"freeze_grant_month":"${LocalDate.now().withDayOfMonth(1)}"}]"""
+        "streak_frozen_days" -> frozenDays.joinToString(",", "[", "]") { """{"day":"$it"}""" }
         "user_settings" -> """[{"notif_prompt_seen":false,"daily_entry_cap":$dailyCap}]"""
         "gardens" -> gardenName?.let { """[{"id":"g1","name":"$it","grid_rows":6,"grid_cols":5}]""" } ?: "[]"
         "garden_plants" -> plantIds.mapIndexed { i, id ->

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "c6b3cb59eeda7c01d31cdff94cc12734",
+    "identityHash": "13e1aaf82c83c48096ff4f136a3aeb20",
     "entities": [
       {
         "tableName": "profile",
@@ -102,7 +102,7 @@
       },
       {
         "tableName": "user_stats",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`userId` TEXT NOT NULL, `totalEntries` INTEGER NOT NULL, `currentStreak` INTEGER NOT NULL, `longestStreak` INTEGER NOT NULL, `lastEntryDate` TEXT, PRIMARY KEY(`userId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`userId` TEXT NOT NULL, `totalEntries` INTEGER NOT NULL, `currentStreak` INTEGER NOT NULL, `longestStreak` INTEGER NOT NULL, `lastEntryDate` TEXT, `streakFreezes` INTEGER NOT NULL, `freezeGrantMonth` TEXT, PRIMARY KEY(`userId`))",
         "fields": [
           {
             "fieldPath": "userId",
@@ -132,12 +132,48 @@
             "fieldPath": "lastEntryDate",
             "columnName": "lastEntryDate",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "streakFreezes",
+            "columnName": "streakFreezes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "freezeGrantMonth",
+            "columnName": "freezeGrantMonth",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
             "userId"
+          ]
+        }
+      },
+      {
+        "tableName": "streak_frozen_days",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`userId` TEXT NOT NULL, `day` TEXT NOT NULL, PRIMARY KEY(`userId`, `day`))",
+        "fields": [
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "day",
+            "columnName": "day",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "userId",
+            "day"
           ]
         }
       },
@@ -567,7 +603,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c6b3cb59eeda7c01d31cdff94cc12734')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '13e1aaf82c83c48096ff4f136a3aeb20')"
     ]
   }
 }

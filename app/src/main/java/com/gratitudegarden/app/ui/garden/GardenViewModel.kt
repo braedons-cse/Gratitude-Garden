@@ -8,8 +8,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenPlantRow
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
+import com.gratitudegarden.app.data.StreakStatus
 import com.gratitudegarden.app.data.SubmitResult
-import com.gratitudegarden.app.data.effectiveStreak
+import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
 import com.gratitudegarden.app.ui.NEEDS_CONNECTION_MESSAGE
@@ -33,6 +34,8 @@ data class GardenUiState(
     val gardenName: String = "My Garden",
     val coins: Int = 0,
     val streak: Int = 0,
+    /** Days were missed and freezes cover them; the next entry spends them. */
+    val streakHeld: Boolean = false,
     val plants: List<GardenPlantRow> = emptyList(),
     val gridRows: Int = 6,
     val gridCols: Int = 5,
@@ -62,7 +65,10 @@ class GardenViewModel(
     init {
         showIn(_ui, repo.observeProfile()) { copy(displayName = it?.displayName ?: "") }
         showIn(_ui, repo.observeWallet()) { copy(coins = it?.balance ?: 0) }
-        showIn(_ui, repo.observeStats()) { copy(streak = it?.effectiveStreak ?: 0) }
+        showIn(_ui, repo.observeStats()) {
+            val s = it?.streakNow ?: StreakStatus()
+            copy(streak = s.days, streakHeld = s.heldByFreeze)
+        }
         showIn(_ui, repo.observeGarden()) {
             copy(
                 loading = false,
@@ -104,6 +110,8 @@ class GardenViewModel(
 
     fun submit(text: String, voice: Boolean) {
         if (text.isBlank() || _ui.value.submitting) return
+        // A held streak is one the server bridges with freezes on this entry, the day's first.
+        val freezing = _ui.value.streakHeld
         _ui.update { it.copy(submitting = true) }
         viewModelScope.launch {
             try {
@@ -112,7 +120,8 @@ class GardenViewModel(
                     // actually awarded rather than promising a fixed number.
                     is SubmitResult.Planted -> {
                         val note = if (result.coins != null) "+${result.coins} coins · " else ""
-                        "${note}a kind thought planted 🌱"
+                        if (freezing) "${note}a streak freeze kept your streak going ❄️"
+                        else "${note}a kind thought planted 🌱"
                     }
                     SubmitResult.Saved -> "Saved in your journal. It'll be planted as soon as it syncs."
                     is SubmitResult.Refused -> friendly(result.reason) ?: "The garden couldn't take that thought."

@@ -57,6 +57,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -118,37 +119,66 @@ data class UserStatsRow(
     @SerialName("current_streak") val currentStreak: Int = 0,
     @SerialName("longest_streak") val longestStreak: Int = 0,
     @SerialName("last_entry_date") val lastEntryDate: String? = null,
+    /** Freezes banked. Read through [freezesOn]: this month's free one may not be banked yet. */
+    @SerialName("streak_freezes") val streakFreezes: Int = 0,
+    /** First day (`yyyy-MM-01`) of the last month whose free freeze was banked; null = never. */
+    @SerialName("freeze_grant_month") val freezeGrantMonth: String? = null,
+)
+
+/** Most freezes anyone can hold; the check on `user_stats.streak_freezes`. */
+const val MAX_STREAK_FREEZES = 2
+
+/** What a freeze costs. Only labels the button: `buy_streak_freeze` charges its own price. */
+const val STREAK_FREEZE_PRICE = 50
+
+/** The streak to show right now. */
+data class StreakStatus(
+    val days: Int = 0,
+    /**
+     * Days have been missed since the last entry, and the freezes on hand cover them: the
+     * next entry spends them and the run carries on. Until then the streak is on ice.
+     */
+    val heldByFreeze: Boolean = false,
+    /** Freezes available, this month's free one included. */
+    val freezes: Int = 0,
 )
 
 /**
- * The streak to actually show the user right now.
- *
- * The stored [currentStreak] is only rewritten when an entry is submitted, so
- * between submits it goes stale: a run that ended days ago keeps reporting its
- * old value until the next entry resets it. A run is only still alive while the
- * last entry was today or yesterday (logging today after logging yesterday
- * continues it) — once a full calendar day is missed the run is broken and the
- * effective streak is 0, even though the stored column hasn't been rewritten yet.
- *
- * Dates are compared in UTC to match how `entry_date` / `last_entry_date` are
- * recorded server-side (`now() at time zone 'UTC'`).
+ * Freezes available on [today], this month's free one included. Mirrors `freezes_on()` in
+ * migration 20260924200000, which grants the monthly one lazily: change both or neither.
  */
+fun UserStatsRow.freezesOn(today: LocalDate): Int {
+    val granted = freezeGrantMonth?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val unbanked = if (granted == null || granted < today.withDayOfMonth(1)) 1 else 0
+    return minOf(MAX_STREAK_FREEZES, streakFreezes + unbanked)
+}
+
 /**
- * Pure core of [effectiveStreak]: the still-alive streak *as of [today]*.
+ * The streak as of [today].
  *
- * Optimization: the clock is injected rather than read inside the function, so this
- * is deterministic and unit-testable in isolation (no dependency on the machine's
- * current date). [effectiveStreak] is the thin convenience wrapper that supplies the
- * real local date. Behaviour is unchanged — the property below reads `today` exactly
- * as before. See docs/unit-test-optimizations.md.
+ * The stored [UserStatsRow.currentStreak] is only rewritten when an entry is submitted, so
+ * between submits it goes stale: a run that ended days ago keeps its old value until the
+ * next entry resets it. The run is alive while the last entry was today or yesterday. After
+ * that it survives only if the freezes on hand cover every missed day, because the next
+ * entry will spend them (`submit_gratitude_entry` bridges a gap only when it can bridge all
+ * of it); otherwise it's broken and shows 0.
+ *
+ * The clock is injected so this is testable without the machine's date; [streakNow]
+ * supplies the real one.
  */
-fun UserStatsRow.effectiveStreakOn(today: LocalDate): Int {
+fun UserStatsRow.streakOn(today: LocalDate): StreakStatus {
+    val freezes = freezesOn(today)
     val last = lastEntryDate
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-        ?: return 0
+        ?: return StreakStatus(freezes = freezes)
     // One day ahead is legitimate: an entry is dated in the zone it was written in, so after
-    // flying west the last entry can sit on what is still tomorrow here.
-    return if (last >= today.minusDays(1) && last <= today.plusDays(1)) currentStreak else 0
+    // flying west the last entry can sit on what is still tomorrow here. Further out isn't.
+    if (last > today.plusDays(1)) return StreakStatus(freezes = freezes)
+    if (last >= today.minusDays(1)) return StreakStatus(currentStreak, heldByFreeze = false, freezes)
+    // Frozen days only ever sit before a written one, so none lie after [last].
+    val missed = ChronoUnit.DAYS.between(last, today) - 1
+    return if (missed <= freezes) StreakStatus(currentStreak, heldByFreeze = true, freezes)
+    else StreakStatus(freezes = freezes)
 }
 
 /**
@@ -158,8 +188,8 @@ fun UserStatsRow.effectiveStreakOn(today: LocalDate): Int {
  */
 fun entryDay(writtenAt: Instant, zone: ZoneId): LocalDate = writtenAt.atZone(zone).toLocalDate()
 
-val UserStatsRow.effectiveStreak: Int
-    get() = effectiveStreakOn(LocalDate.now())
+val UserStatsRow.streakNow: StreakStatus
+    get() = streakOn(LocalDate.now())
 
 @Serializable
 data class WalletRow(val balance: Int = 0)
@@ -187,6 +217,9 @@ data class Item(
 
 @Serializable
 private data class InventoryRow(@SerialName("item_id") val itemId: String)
+
+@Serializable
+private data class FrozenDayRow(val day: String)
 
 @Serializable
 private data class SettingsRow(
@@ -380,6 +413,13 @@ class GardenRepository(
             db.entryDao().observeDatesSince(uid, since).map { it.toSet() }
         }
 
+    /** The days (`yyyy-MM-dd`) within the last [days] days that a streak freeze covered. */
+    fun observeRecentFrozenDates(days: Int = 7): Flow<Set<String>> =
+        ofUser(emptySet()) { uid ->
+            val since = LocalDate.now().minusDays((days - 1).toLong()).toString()
+            db.statsDao().observeFrozenDaysSince(uid, since).map { it.toSet() }
+        }
+
     /**
      * How many entries the user has written today, **including soft-deleted ones**.
      *
@@ -497,14 +537,22 @@ class GardenRepository(
                 val walletQ = async { fetchOwnRow<WalletRow>("coin_wallets", uid) }
                 val statsQ = async { fetchOwnRow<UserStatsRow>("user_stats", uid) }
                 val settingsQ = async { fetchOwnRow<SettingsRow>("user_settings", uid) }
+                // At most two a month, so the whole history is small.
+                val frozenQ = async {
+                    client.postgrest.from("streak_frozen_days").select {
+                        filter { eq("user_id", uid) }
+                    }.decodeList<FrozenDayRow>()
+                }
                 val profile = profileQ.await()
                 val wallet = walletQ.await()
                 val stats = statsQ.await()
                 val settings = settingsQ.await()
+                val frozen = frozenQ.await()
                 db.withTransaction {
                     profile?.let { db.accountDao().upsertProfile(it.toEntity(uid)) }
                     wallet?.let { db.accountDao().upsertWallet(it.toEntity(uid)) }
                     stats?.let { db.statsDao().upsert(it.toEntity(uid)) }
+                    db.statsDao().replaceFrozenDays(uid, frozen.map { it.day })
                     settings?.let {
                         db.accountDao().upsertSettings(
                             SettingsEntity(uid, it.notifPromptSeen, SettingsEntity.clampCap(it.dailyEntryCap)),
@@ -956,6 +1004,16 @@ class GardenRepository(
     suspend fun purchaseItem(itemId: String) {
         client.postgrest.rpc("purchase_item", buildJsonObject { put("p_item_id", itemId) })
         afterWrite(::refreshAccount, ::refreshCatalog)
+    }
+
+    /**
+     * Buy one streak freeze. Not an item: freezes stack, and purchase_item returns what's
+     * already owned. The server charges [STREAK_FREEZE_PRICE] and refuses past
+     * [MAX_STREAK_FREEZES]; both balances come back through the refresh.
+     */
+    suspend fun buyStreakFreeze() {
+        client.postgrest.rpc("buy_streak_freeze")
+        afterWrite(::refreshAccount)
     }
 
     suspend fun placePlant(itemId: String, gridX: Int, gridY: Int) {
