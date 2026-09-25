@@ -38,6 +38,7 @@ shippable product.
     - [A policy constrains which row, never which columns](#a-policy-constrains-which-row-never-which-columns)
 - [Feature notes](#feature-notes)
   - [Accessibility (TalkBack)](#accessibility-talkback)
+  - [Streak freezes](#streak-freezes)
   - [Daily streak reminders](#daily-streak-reminders)
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
@@ -88,10 +89,10 @@ per unit of work.
   "add entry" field puts the loop on the home screen; notification actions (inline reply,
   "remind me tonight") let an entry be logged without a cold start.
 - **1.3 Make the garden feel like a game — L.** The loop today is write → coins → buy seed
-  → place → water. Good skeleton, thin. In priority order: **streak insurance/freeze**
-  (one forgiven day per month — retention gold and the cheapest item here), seasons and
-  weather, rare and evolving plants, garden expansion, and animated milestone moments at
-  7/30/100 days.
+  → place → water. Good skeleton, thin. In priority order: **streak freezes** (✅ **done**:
+  one free a month plus more for coins, up to 2 held; see [Streak freezes](#streak-freezes)),
+  seasons and weather, rare and evolving plants, garden expansion, and animated milestone
+  moments at 7/30/100 days.
 - **1.4 Entry experience beyond a text box — M.** Photos attached to an entry (Supabase
   Storage) — the most requested journaling feature; a mood tag per entry, which unlocks
   1.5; rotating daily prompts for the blank-page problem; multiple entries per day with a
@@ -261,10 +262,10 @@ profiling/                          # before/after profiling evidence
 
 ## Supabase backend
 
-Nine tables, all with **Row-Level Security enabled**:
+Ten tables, all with **Row-Level Security enabled**:
 
 `profiles`, `user_settings`, `user_stats`, `items`, `coin_wallets`,
-`gratitude_entries`, `gardens`, `user_inventory`, `garden_plants`.
+`gratitude_entries`, `gardens`, `user_inventory`, `garden_plants`, `streak_frozen_days`.
 
 Enum columns (values used by the admin UI come straight from these):
 
@@ -285,7 +286,7 @@ gameplay mutations go through `SECURITY DEFINER` RPCs (`submit_gratitude_entry`,
 ### Migrations
 
 `supabase/migrations/` holds the complete schema history — every table, enum, RLS policy,
-trigger, and RPC above, in the order it was applied. Replaying all fourteen files against an
+trigger, and RPC above, in the order it was applied. Replaying every file against an
 empty project reproduces the backend exactly. The four files under `db/` are older
 hand-written notes covering a subset of the same changes; `supabase/migrations/` is the
 source of truth.
@@ -297,7 +298,7 @@ three kinds of write**, and every one of them is server-validated:
 
 | Path | How |
 | --- | --- |
-| The gameplay RPCs | `submit_gratitude_entry`, `edit_gratitude_entry`, `delete_gratitude_entry`, `purchase_item`, `place_plant`, `move_plant`, `water_plant`, `set_active_backdrop`, `delete_current_user`, `mark_notif_prompt_seen` — all `SECURITY DEFINER`, all deriving the user from `auth.uid()` |
+| The gameplay RPCs | `submit_gratitude_entry`, `edit_gratitude_entry`, `delete_gratitude_entry`, `purchase_item`, `place_plant`, `move_plant`, `water_plant`, `set_active_backdrop`, `buy_streak_freeze`, `delete_current_user`, `mark_notif_prompt_seen` — all `SECURITY DEFINER`, all deriving the user from `auth.uid()` |
 | `garden_plants` DELETE | `garden_plants_delete_own`, scoped through `gardens.user_id`. A DELETE is all-or-nothing, so there is no column subset to abuse |
 | Nothing else | There are **no INSERT policies at all**, and after 0.5 there are **no self-serve UPDATE policies at all** |
 
@@ -487,6 +488,34 @@ a mouse does not emulate TalkBack's touch exploration well.
    volume-key shortcut).
 
 </details>
+
+### Streak freezes
+
+A missed day is forgiven if a freeze is on hand (`20260924200000_streak_freeze`). Losing a
+long streak to one bad night is the top reason people quit habit apps for good, and since the
+reward scales with streak length, a broken streak also costs coins.
+
+- **Where they come from.** One free freeze per calendar month, plus more for 50 coins in the
+  Shop (`buy_streak_freeze()`), up to **2** held. The free one is granted lazily:
+  `freezes_on(banked, grant_month, today)` adds it if this month's hasn't been banked, and a
+  submit or a buy banks it. No cron job.
+- **When they're spent.** Automatically, by the first entry of a day that follows a 1–2 day
+  gap, and only if the freezes on hand cover the **whole** gap. A wider gap resets the streak
+  as before and spends nothing. The covered days go in `streak_frozen_days`, which the owner
+  can read and only the RPCs can write.
+- **What a frozen day is worth.** It bridges the run but doesn't lengthen it: day 10, a
+  frozen day, then an entry is day 11. `streak_through()` walks entry dates and frozen days
+  together to find the run, and counts only the entries. The reward's streak bonus sees the
+  bridged run.
+- **Late entries.** If an offline entry arrives up to 36 h late and lands on a frozen day,
+  the freeze wasn't needed: the frozen day is removed and the freeze handed back. A replayed
+  submit returns before any of this, so it can't spend a freeze twice.
+
+On the device, `UserStatsRow.streakOn(today)` mirrors the rule. Between the missed day and
+the next entry the streak isn't shown as 0 but as **held**: the flame in the header chips
+turns into a snowflake. The Journal's week strip marks frozen days with a ❄, the Me screen
+shows the count, and the toast after the entry that spends a freeze says so. `freezesOn()`
+copies `freezes_on()`; change both or neither.
 
 ### Daily streak reminders
 
