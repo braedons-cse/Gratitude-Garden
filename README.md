@@ -39,6 +39,7 @@ shippable product.
 - [Feature notes](#feature-notes)
   - [Accessibility (TalkBack)](#accessibility-talkback)
   - [Streak freezes](#streak-freezes)
+  - [XP and levels](#xp-and-levels)
   - [Daily streak reminders](#daily-streak-reminders)
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
@@ -91,7 +92,9 @@ per unit of work.
 - **1.3 Make the garden feel like a game — L.** The loop today is write → coins → buy seed
   → place → water. Good skeleton, thin. In priority order: **streak freezes** (✅ **done**:
   one free a month plus more for coins, up to 2 held; see [Streak freezes](#streak-freezes)),
-  seasons and weather, rare and evolving plants, garden expansion, and animated milestone
+  an **XP ladder** (✅ **done**: days journaled earn levels, which unlock the shop's
+  level-gated seeds; see [XP and levels](#xp-and-levels)), backdrops you can equip (they can
+  be bought but nothing shows or equips them yet), seasons and weather, rare and evolving plants, garden expansion, and animated milestone
   moments at 7/30/100 days.
 - **1.4 Entry experience beyond a text box — M.** Photos attached to an entry (Supabase
   Storage) — the most requested journaling feature; a mood tag per entry, which unlocks
@@ -516,6 +519,39 @@ the next entry the streak isn't shown as 0 but as **held**: the flame in the hea
 turns into a snowflake. The Journal's week strip marks frozen days with a ❄, the Me screen
 shows the count, and the toast after the entry that spends a freeze says so. `freezesOn()`
 copies `freezes_on()`; change both or neither.
+
+### XP and levels
+
+`profiles.level` and `profiles.xp` existed from the first migration, but nothing ever wrote
+them, so everyone stayed level 1 and `purchase_item`'s `level_required` check locked Wild
+Rose (level 3) and Bright Poppy (level 5) for good. `20260925120000_xp_ladder` makes levels
+real:
+
+- **What earns XP.** Days journaled, not volume: **10 XP** for the day's first entry and
+  **2** for each extra one, still bounded by the daily cap. "First of the day" counts
+  soft-deleted entries, the same way the cap and the streak bonus do, so deleting and
+  rewriting can't earn the 10 again. Deleting refunds nothing. A replayed submit returns
+  before any of this, so XP is paid once.
+- **The curve.** `level = floor(sqrt(xp / 10 + 1))`, so level *n* starts at `10·(n² − 1)`
+  XP: 30, 80, 150, 240, 350 … Journaling once a day, that's level 2 in about 3 days and
+  level 5 (the highest the catalog asks for) in 3–4 weeks. There's no cap.
+- **Level follows XP by trigger.** `profiles_sync_level` sets `level` from
+  `level_for_xp(xp)` on every XP write, whether from the RPC, the backfill, or the admin
+  dashboard. Only an XP write fires it, so an admin can still set `level` by hand for
+  testing.
+- **Stored per entry.** `gratitude_entries.xp_awarded` sits next to `coins_awarded`. The
+  submit RPC returns the entry row, so the app learns what an entry earned with no
+  signature change.
+- **Backfilled.** Existing accounts got XP for their past entries by the same rule.
+
+On the device, `Levels.kt` mirrors the curve (`levelForXp()` copies `level_for_xp()`;
+change both or neither) for the Me screen's progress bar ("20 / 50 XP to level 3"). The
+toast after an entry adds "+10 XP". When the synced level passes the last one celebrated
+on this device, the Garden shows a level-up dialog naming any seeds it unlocked, with a
+"Visit the shop" button. The last celebrated level is kept per user in a local DataStore
+(`LevelPreferences`), so a level reached by an entry the outbox delivered in the
+background still gets its moment the next time the Garden opens. The first level a device
+sees for an account is recorded silently.
 
 ### Daily streak reminders
 
