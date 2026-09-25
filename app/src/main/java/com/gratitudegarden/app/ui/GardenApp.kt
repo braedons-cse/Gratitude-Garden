@@ -157,6 +157,10 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
                             placingItemId = pendingPlacement,
                             onPlacementDone = { pendingPlacement = null },
                             onDragActive = { gardenDragging = it },
+                            onOpenShop = {
+                                val shop = tabs.indexOfFirst { it.route == "shop" }
+                                scope.launch { pagerState.animateScrollToPage(shop) }
+                            },
                         )
                         "shop" -> ShopRoute(
                             onRequestPlant = { itemId ->

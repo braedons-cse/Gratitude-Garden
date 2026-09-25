@@ -8,6 +8,8 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -65,6 +67,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gratitudegarden.app.data.LevelProgress
 import com.gratitudegarden.app.data.MAX_STREAK_FREEZES
 import com.gratitudegarden.app.ui.admin.AdminTools
 import com.gratitudegarden.app.ui.components.GgTextField
@@ -205,12 +208,14 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                     color = GgInk,
                 )
                 Text(
-                    text = "Level ${ui.level} gardener",
+                    text = "Level ${ui.progress.level} gardener",
                     fontFamily = Nunito,
                     fontWeight = FontWeight.Medium,
                     fontSize = 13.sp,
                     color = GgInkSoft,
                 )
+                Spacer(Modifier.height(6.dp))
+                LevelBar(ui.progress)
             }
         }
 
@@ -842,5 +847,26 @@ private fun UnsyncedLogOutDialog(
                 }
             }
         },
+    )
+}
+
+/** How far through the current level, and what the next one takes. */
+@Composable
+private fun LevelBar(progress: LevelProgress) {
+    val fraction by animateFloatAsState(
+        targetValue = progress.fraction.coerceIn(0f, 1f), animationSpec = tween(600), label = "xp",
+    )
+    Box(
+        modifier = Modifier.width(180.dp).height(6.dp).clip(CircleShape).background(GgMoss),
+    ) {
+        Box(Modifier.fillMaxWidth(fraction).height(6.dp).clip(CircleShape).background(GgPrimary))
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "${progress.xpIntoLevel} / ${progress.xpForNext} XP to level ${progress.level + 1}",
+        fontFamily = Nunito,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 11.5.sp,
+        color = GgInkMuted,
     )
 }

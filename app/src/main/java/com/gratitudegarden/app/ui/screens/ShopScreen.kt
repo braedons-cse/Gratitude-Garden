@@ -289,7 +289,7 @@ private fun SeedCard(
 
         when {
             owned -> ShopButton(text = if (busy) "…" else "Plant", filled = false, enabled = online && !busy, onClick = onPlant)
-            locked -> ShopButton(text = "Lvl ${item.levelRequired}", filled = false, enabled = false, onClick = {})
+            locked -> ShopButton(text = "Level ${item.levelRequired}", filled = false, enabled = false, onClick = {})
             // Offline the price still shows, so the shop reads the same; it just can't be tapped.
             else -> ShopButton(text = if (busy) "…" else "🪙 ${item.priceCoins}", filled = true, enabled = online && !busy, onClick = onBuy)
         }

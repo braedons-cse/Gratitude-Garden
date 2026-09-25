@@ -96,6 +96,7 @@ import com.gratitudegarden.app.data.GardenPlantRow
 import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.ui.garden.GardenUiState
 import com.gratitudegarden.app.ui.garden.GardenViewModel
+import com.gratitudegarden.app.ui.garden.LevelUp
 import com.gratitudegarden.app.ui.sprites.CoinIcon
 import com.gratitudegarden.app.ui.sprites.GgIcon
 import com.gratitudegarden.app.ui.sprites.GgIconName
@@ -127,6 +128,7 @@ fun GardenRoute(
     placingItemId: String? = null,
     onPlacementDone: () -> Unit = {},
     onDragActive: (Boolean) -> Unit = {},
+    onOpenShop: () -> Unit = {},
 ) {
     LogComposableLifecycle(LogTags.GARDEN_SCREEN)
     val vm: GardenViewModel = viewModel(factory = GardenViewModel.Factory)
@@ -139,6 +141,10 @@ fun GardenRoute(
         onWater = vm::water,
         onMessageShown = vm::consumeMessage,
         onReminderPromptDecided = vm::onReminderPromptDecided,
+        onLevelUpClosed = { visitShop ->
+            vm.onLevelUpSeen()
+            if (visitShop) onOpenShop()
+        },
         placingItemId = placingItemId,
         onPlantSeed = { itemId, x, y -> vm.plantSeedAt(itemId, x, y) },
         onMovePlant = { plantId, x, y -> vm.movePlant(plantId, x, y) },
@@ -156,6 +162,8 @@ fun GardenScreen(
     onWater: (String) -> Unit,
     onMessageShown: () -> Unit,
     onReminderPromptDecided: (Boolean) -> Unit = {},
+    /** True when the user chose to go to the shop. */
+    onLevelUpClosed: (visitShop: Boolean) -> Unit = {},
     placingItemId: String? = null,
     onPlantSeed: (String, Int, Int) -> Unit = { _, _, _ -> },
     onMovePlant: (String, Int, Int) -> Unit = { _, _, _ -> },
@@ -337,11 +345,86 @@ fun GardenScreen(
         )
     }
 
-    if (ui.showNotifPrompt) {
+    // One dialog at a time; the reminder prompt waits for the level-up to be closed.
+    val levelUp = ui.levelUp
+    if (levelUp != null) {
+        LevelUpDialog(levelUp, onClose = onLevelUpClosed)
+    } else if (ui.showNotifPrompt) {
         NotifPromptDialog(
             onEnable = { onReminderPromptDecided(true) },
             onDecline = { onReminderPromptDecided(false) },
         )
+    }
+}
+
+@Composable
+private fun LevelUpDialog(levelUp: LevelUp, onClose: (visitShop: Boolean) -> Unit) {
+    val unlocked = levelUp.unlockedSeeds
+    Dialog(onDismissRequest = { onClose(false) }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(GgBgSage)
+                .padding(22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier.size(72.dp).clip(CircleShape).background(GgMoss),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "${levelUp.level}",
+                    fontFamily = Caprasimo,
+                    fontSize = 30.sp,
+                    color = GgPrimaryDeep,
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Level ${levelUp.level}! 🌿",
+                fontFamily = Caprasimo,
+                fontSize = 22.sp,
+                color = GgPrimaryDeep,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                when (unlocked.size) {
+                    0 -> "Every day you write, your garden grows with you. Keep going."
+                    1 -> "${unlocked[0]} is now in the shop."
+                    else -> "${unlocked.dropLast(1).joinToString(", ")} and ${unlocked.last()} are now in the shop."
+                },
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Medium,
+                fontSize = 13.5.sp,
+                color = GgInkSoft,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(20.dp))
+            if (unlocked.isNotEmpty()) {
+                PillButton(
+                    text = "Visit the shop",
+                    onClick = { onClose(true) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Later",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = GgInkMuted,
+                    modifier = Modifier.clickable { onClose(false) }.padding(8.dp),
+                )
+            } else {
+                PillButton(
+                    text = "Nice",
+                    onClick = { onClose(false) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 }
 

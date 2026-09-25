@@ -5,9 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.gratitudegarden.app.data.AppSession
 import com.gratitudegarden.app.data.GardenPlantRow
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
+import com.gratitudegarden.app.data.LevelPreferences
 import com.gratitudegarden.app.data.StreakStatus
 import com.gratitudegarden.app.data.SubmitResult
 import com.gratitudegarden.app.data.streakNow
@@ -24,8 +26,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+/** A level reached and not yet congratulated on this device, and the seeds it opened up. */
+data class LevelUp(val level: Int, val unlockedSeeds: List<String>)
 
 data class GardenUiState(
     /** True until Room's first read; the screen stays blank rather than show defaults. */
@@ -48,6 +54,7 @@ data class GardenUiState(
     val placing: Boolean = false,
     val message: String? = null,
     val showNotifPrompt: Boolean = false,
+    val levelUp: LevelUp? = null,
     /** Writing works offline; the economy (plant, water, move, dig) doesn't. */
     val online: Boolean = true,
 ) {
@@ -61,6 +68,11 @@ class GardenViewModel(
 
     private val _ui = MutableStateFlow(GardenUiState())
     val ui: StateFlow<GardenUiState> = _ui.asStateFlow()
+
+    private val levelPrefs = LevelPreferences(appContext)
+
+    // Captured once: this ViewModel lives inside the signed-in user's SessionScope.
+    private val userId = (repo.session.value as? AppSession.SignedIn)?.userId
 
     init {
         showIn(_ui, repo.observeProfile()) { copy(displayName = it?.displayName ?: "") }
@@ -83,7 +95,47 @@ class GardenViewModel(
         showIn(_ui, repo.observeEntriesTodayCount()) { copy(usedToday = it) }
         showIn(_ui, repo.observeDailyCap()) { copy(dailyCap = it) }
         showIn(_ui, repo.isOnline) { copy(online = it) }
+        watchLevel()
         refresh()
+    }
+
+    /**
+     * Offer the level-up dialog whenever the synced level passes the last one celebrated
+     * here. Keyed off the profile rather than the submit, so an entry the outbox delivered
+     * in the background still gets its moment the next time the Garden opens. The first
+     * level seen on a device is only recorded, so signing in isn't greeted with a level-up.
+     */
+    private fun watchLevel() {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            combine(
+                repo.observeProfile().filterNotNull(),
+                levelPrefs.celebrated(uid),
+                repo.observeCatalog(),
+            ) { profile, celebrated, items -> Triple(profile.level, celebrated, items) }
+                .collect { (level, celebrated, items) ->
+                    when {
+                        // First sighting, or an admin lowered the level: just remember it.
+                        celebrated == null || level < celebrated -> levelPrefs.setCelebrated(uid, level)
+                        level > celebrated -> {
+                            val unlocked = items.filter {
+                                it.category == "seed" && it.isPurchasable &&
+                                    it.levelRequired in (celebrated + 1)..level
+                            }.map { it.name }
+                            _ui.update { it.copy(levelUp = LevelUp(level, unlocked)) }
+                        }
+                        else -> _ui.update { it.copy(levelUp = null) }
+                    }
+                }
+        }
+    }
+
+    /** The level-up dialog was closed; don't show this level again. */
+    fun onLevelUpSeen() {
+        val uid = userId ?: return
+        val level = _ui.value.levelUp?.level ?: return
+        _ui.update { it.copy(levelUp = null) }
+        viewModelScope.launch { levelPrefs.setCelebrated(uid, level) }
     }
 
     private fun ownedSeeds(): Flow<List<Item>> =
@@ -119,7 +171,8 @@ class GardenViewModel(
                     // The server decides the reward, so the toast reports what was
                     // actually awarded rather than promising a fixed number.
                     is SubmitResult.Planted -> {
-                        val note = if (result.coins != null) "+${result.coins} coins · " else ""
+                        val earned = listOfNotNull(result.coins?.let { "+$it coins" }, result.xp?.let { "+$it XP" })
+                        val note = if (earned.isEmpty()) "" else earned.joinToString(" · ", postfix = " · ")
                         if (freezing) "${note}a streak freeze kept your streak going ❄️"
                         else "${note}a kind thought planted 🌱"
                     }

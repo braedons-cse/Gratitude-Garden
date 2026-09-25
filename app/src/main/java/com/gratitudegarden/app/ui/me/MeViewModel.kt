@@ -9,7 +9,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GardenRepository
+import com.gratitudegarden.app.data.LevelProgress
 import com.gratitudegarden.app.data.StreakStatus
+import com.gratitudegarden.app.data.levelProgress
 import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.notifications.ReminderNotifications
 import com.gratitudegarden.app.notifications.ReminderPreferences
@@ -26,7 +28,8 @@ import kotlinx.coroutines.launch
 data class MeUiState(
     val loading: Boolean = true,
     val name: String = "",
-    val level: Int = 1,
+    /** Level and XP, both read off the XP so the number and the bar agree. */
+    val progress: LevelProgress = levelProgress(0),
     val coins: Int = 0,
     val streak: Int = 0,
     /** Days were missed and freezes cover them; the next entry spends them. */
@@ -66,7 +69,7 @@ class MeViewModel(
         showIn(_ui, repo.observeProfile()) {
             copy(
                 name = it?.displayName ?: "Gardener",
-                level = it?.level ?: 1,
+                progress = levelProgress(it?.xp ?: 0),
                 isAdmin = it?.isAdmin ?: false,
             )
         }
