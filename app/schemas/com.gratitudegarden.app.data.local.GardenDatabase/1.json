@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "bda4dd2efcae14e8b1898c35c85aeaee",
+    "identityHash": "3f18e70e0f453b0f0cbcb90539d83e53",
     "entities": [
       {
         "tableName": "profile",
@@ -179,7 +179,7 @@
       },
       {
         "tableName": "garden",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `name` TEXT NOT NULL, `gridRows` INTEGER NOT NULL, `gridCols` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `name` TEXT NOT NULL, `gridRows` INTEGER NOT NULL, `gridCols` INTEGER NOT NULL, `activeBackdropItemId` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -210,6 +210,11 @@
             "columnName": "gridCols",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "activeBackdropItemId",
+            "columnName": "activeBackdropItemId",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -608,7 +613,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bda4dd2efcae14e8b1898c35c85aeaee')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3f18e70e0f453b0f0cbcb90539d83e53')"
     ]
   }
 }

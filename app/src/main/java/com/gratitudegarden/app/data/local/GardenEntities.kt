@@ -18,11 +18,13 @@ data class GardenEntity(
     val name: String,
     val gridRows: Int,
     val gridCols: Int,
+    val activeBackdropItemId: String? = null,
 )
 
-fun Garden.toEntity(userId: String) = GardenEntity(id, userId, name, gridRows, gridCols)
+fun Garden.toEntity(userId: String) =
+    GardenEntity(id, userId, name, gridRows, gridCols, activeBackdropItemId = activeBackdropItemId)
 
-fun GardenEntity.toRow() = Garden(id, name, gridRows, gridCols)
+fun GardenEntity.toRow() = Garden(id, name, gridRows, gridCols, activeBackdropItemId = activeBackdropItemId)
 
 @Entity(tableName = "garden_plants", indices = [Index("gardenId")])
 data class PlantEntity(

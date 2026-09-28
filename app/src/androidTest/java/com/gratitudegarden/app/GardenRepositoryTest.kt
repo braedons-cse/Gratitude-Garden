@@ -101,8 +101,10 @@ class GardenRepositoryTest {
         assertEquals(3, repo.observeStats().first()?.totalEntries)
         assertEquals("My Garden", repo.observeGarden().first()?.name)
         assertEquals(listOf("p1", "p2"), repo.observePlants().first().map { it.id }.sorted())
-        assertEquals(listOf("i1", "i2"), repo.observeCatalog().first().map { it.id })
-        assertEquals(setOf("i1"), repo.observeInventory().first())
+        // Cheapest first: the free starter backdrop leads.
+        assertEquals(listOf("i3", "i1", "i2", "i4"), repo.observeCatalog().first().map { it.id })
+        assertEquals(setOf("i1", "i3"), repo.observeInventory().first())
+        assertEquals("i3", repo.observeGarden().first()?.activeBackdropItemId)
         assertEquals(listOf("e00002", "e00001", "e00000"), repo.observeEntries(10).first().map { it.id })
         assertEquals(3, repo.observeEntriesTodayCount().first())
     }
@@ -143,6 +145,42 @@ class GardenRepositoryTest {
         fake.frozenDays.remove(yesterday)
         repo.refreshAll(force = true)
         assertEquals(emptySet<String>(), repo.observeRecentFrozenDates().first())
+    }
+
+    @Test
+    fun refreshBringsTheActiveBackdrop() = runBlocking {
+        signIn()
+        assertEquals("i3", repo.observeGarden().first()?.activeBackdropItemId)
+
+        // Changed on the server (another device, or the admin dashboard).
+        fake.activeBackdropId = "i4"
+        repo.refreshAll(force = true)
+        assertEquals("i4", repo.observeGarden().first()?.activeBackdropItemId)
+    }
+
+    @Test
+    fun equippingABackdropCallsTheServerOnceAndShowsIt() = runBlocking {
+        fake.ownedItemIds += "i4"
+        signIn()
+
+        repo.setActiveBackdrop("i4")
+
+        assertEquals(1, fake.rpcCalls("set_active_backdrop").size)
+        assertEquals("i4", repo.observeGarden().first()?.activeBackdropItemId)
+    }
+
+    @Test
+    fun equippingAnUnownedBackdropChangesNothing() = runBlocking {
+        signIn()
+
+        try {
+            repo.setActiveBackdrop("i4")
+            fail("the server refuses a backdrop the user doesn't own")
+        } catch (_: Exception) {
+        }
+
+        assertEquals("i3", fake.activeBackdropId)
+        assertEquals("i3", repo.observeGarden().first()?.activeBackdropItemId)
     }
 
     @Test

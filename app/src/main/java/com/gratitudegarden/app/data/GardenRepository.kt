@@ -103,6 +103,8 @@ data class Garden(
     val name: String,
     @SerialName("grid_rows") val gridRows: Int = 6,
     @SerialName("grid_cols") val gridCols: Int = 5,
+    /** Only ever written by set_active_backdrop, which checks ownership. */
+    @SerialName("active_backdrop_item_id") val activeBackdropItemId: String? = null,
 )
 
 @Serializable
@@ -1007,6 +1009,12 @@ class GardenRepository(
     suspend fun purchaseItem(itemId: String) {
         client.postgrest.rpc("purchase_item", buildJsonObject { put("p_item_id", itemId) })
         afterWrite(::refreshAccount, ::refreshCatalog)
+    }
+
+    /** Equip a backdrop the user owns. The server refuses one they don't. */
+    suspend fun setActiveBackdrop(itemId: String) {
+        client.postgrest.rpc("set_active_backdrop", buildJsonObject { put("p_item_id", itemId) })
+        afterWrite(::refreshGarden)
     }
 
     /**

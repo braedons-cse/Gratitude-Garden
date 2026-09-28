@@ -77,7 +77,10 @@ class FakeSupabase {
     val frozenDays = CopyOnWriteArrayList<String>()
     var gardenName: String? = "My Garden"
     val plantIds = CopyOnWriteArrayList(listOf("p1", "p2"))
-    val ownedItemIds = CopyOnWriteArrayList(listOf("i1"))
+    val ownedItemIds = CopyOnWriteArrayList(listOf("i1", "i3"))
+
+    /** The equipped backdrop; the signup starter (i3) until set_active_backdrop changes it. */
+    @Volatile var activeBackdropId: String? = "i3"
     val entries = CopyOnWriteArrayList<Entry>()
 
     val today: String = LocalDate.now().toString()
@@ -201,6 +204,15 @@ class FakeSupabase {
                     reply("$freezes")
                 }
             }
+            path == "/rest/v1/rpc/set_active_backdrop" -> {
+                val id = arg("p_item_id")
+                if (id !in ownedItemIds) {
+                    reply(error("you do not own this backdrop"), HttpStatusCode.BadRequest)
+                } else {
+                    activeBackdropId = id
+                    reply(table("gardens", Parameters.Empty).removeSurrounding("[", "]"))
+                }
+            }
             path.startsWith("/rest/v1/") -> respond(
                 content = table(path.removePrefix("/rest/v1/"), request.url.parameters),
                 status = HttpStatusCode.OK,
@@ -217,12 +229,19 @@ class FakeSupabase {
             """"last_entry_date":"$today","streak_freezes":$freezes,"freeze_grant_month":"${LocalDate.now().withDayOfMonth(1)}"}]"""
         "streak_frozen_days" -> frozenDays.joinToString(",", "[", "]") { """{"day":"$it"}""" }
         "user_settings" -> """[{"notif_prompt_seen":false,"daily_entry_cap":$dailyCap}]"""
-        "gardens" -> gardenName?.let { """[{"id":"g1","name":"$it","grid_rows":6,"grid_cols":5}]""" } ?: "[]"
+        "gardens" -> gardenName?.let {
+            val backdrop = activeBackdropId?.let { id -> "\"$id\"" } ?: "null"
+            """[{"id":"g1","name":"$it","grid_rows":6,"grid_cols":5,"active_backdrop_item_id":$backdrop}]"""
+        } ?: "[]"
         "garden_plants" -> plantIds.mapIndexed { i, id ->
             """{"id":"$id","item_id":"i1","grid_x":$i,"grid_y":0,"growth_stage":"seedling","health":"healthy"}"""
         }.joinToString(",", "[", "]")
         "items" -> """[{"id":"i1","slug":"sunflower","category":"seed","name":"Sunflower","price_coins":5},""" +
-            """{"id":"i2","slug":"tulip","category":"seed","name":"Tulip","price_coins":8}]"""
+            """{"id":"i2","slug":"tulip","category":"seed","name":"Tulip","price_coins":8},""" +
+            """{"id":"i3","slug":"backdrop.cottage_meadow","category":"backdrop","name":"Cottage Meadow",""" +
+            """"price_coins":0,"is_purchasable":false,"is_starter":true},""" +
+            """{"id":"i4","slug":"backdrop.misty_forest","category":"backdrop","name":"Misty Forest",""" +
+            """"price_coins":160,"level_required":2}]"""
         "user_inventory" -> ownedItemIds.joinToString(",", "[", "]") { """{"item_id":"$it"}""" }
         "gratitude_entries" -> entriesPage(params)
         else -> error("unexpected table $name")
