@@ -30,8 +30,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** A level reached and not yet congratulated on this device, and the seeds it opened up. */
-data class LevelUp(val level: Int, val unlockedSeeds: List<String>)
+/** A level reached and not yet congratulated on this device, and the seeds and backdrops it opened up. */
+data class LevelUp(val level: Int, val unlocked: List<String>)
 
 data class GardenUiState(
     /** True until Room's first read; the screen stays blank rather than show defaults. */
@@ -45,6 +45,8 @@ data class GardenUiState(
     val plants: List<GardenPlantRow> = emptyList(),
     val gridRows: Int = 6,
     val gridCols: Int = 5,
+    /** Drawn above the plot; its slug comes from [itemSlugs]. */
+    val activeBackdropId: String? = null,
     val itemSlugs: Map<String, String> = emptyMap(),
     val ownedSeeds: List<Item> = emptyList(),
     val dailyCap: Int = 10,
@@ -87,6 +89,7 @@ class GardenViewModel(
                 gardenName = it?.name ?: "My Garden",
                 gridRows = it?.gridRows ?: 6,
                 gridCols = it?.gridCols ?: 5,
+                activeBackdropId = it?.activeBackdropItemId,
             )
         }
         showIn(_ui, repo.observePlants()) { copy(plants = it) }
@@ -119,7 +122,7 @@ class GardenViewModel(
                         celebrated == null || level < celebrated -> levelPrefs.setCelebrated(uid, level)
                         level > celebrated -> {
                             val unlocked = items.filter {
-                                it.category == "seed" && it.isPurchasable &&
+                                it.category in UNLOCKABLE && it.isPurchasable &&
                                     it.levelRequired in (celebrated + 1)..level
                             }.map { it.name }
                             _ui.update { it.copy(levelUp = LevelUp(level, unlocked)) }
@@ -303,6 +306,9 @@ class GardenViewModel(
     }
 
     companion object {
+        /** What a level-up announces as newly in the shop. */
+        private val UNLOCKABLE = setOf("seed", "backdrop")
+
         val Factory = viewModelFactory { initializer { GardenViewModel(repo(), gardenApp()) } }
     }
 }

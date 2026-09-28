@@ -44,6 +44,7 @@ import com.gratitudegarden.app.data.MAX_STREAK_FREEZES
 import com.gratitudegarden.app.data.STREAK_FREEZE_PRICE
 import com.gratitudegarden.app.ui.shop.ShopUiState
 import com.gratitudegarden.app.ui.shop.ShopViewModel
+import com.gratitudegarden.app.ui.sprites.BackdropScene
 import com.gratitudegarden.app.ui.sprites.CoinIcon
 import com.gratitudegarden.app.ui.sprites.GgIcon
 import com.gratitudegarden.app.ui.sprites.GgIconName
@@ -72,6 +73,7 @@ fun ShopRoute(onRequestPlant: (String) -> Unit = {}) {
         ui = ui,
         onBuy = vm::buy,
         onBuyFreeze = vm::buyFreeze,
+        onEquip = vm::equip,
         // "Plant" now sends you to the Garden to choose the spot.
         onPlant = { item -> onRequestPlant(item.id) },
         onMessageShown = vm::consumeMessage,
@@ -88,6 +90,7 @@ fun ShopScreen(
     onMessageShown: () -> Unit,
     onRefresh: () -> Unit = {},
     onBuyFreeze: () -> Unit = {},
+    onEquip: (Item) -> Unit = {},
 ) {
     val context = LocalContext.current
     var tab by remember { mutableStateOf(Tab.Seeds) }
@@ -154,6 +157,7 @@ fun ShopScreen(
 
         when (tab) {
             Tab.Seeds -> SeedGrid(ui = ui, onBuy = onBuy, onPlant = onPlant)
+            Tab.Backdrops -> BackdropList(ui = ui, onBuy = onBuy, onEquip = onEquip)
             else -> ComingSoon(tab.label)
         }
 
@@ -292,6 +296,76 @@ private fun SeedCard(
             locked -> ShopButton(text = "Level ${item.levelRequired}", filled = false, enabled = false, onClick = {})
             // Offline the price still shows, so the shop reads the same; it just can't be tapped.
             else -> ShopButton(text = if (busy) "…" else "🪙 ${item.priceCoins}", filled = true, enabled = online && !busy, onClick = onBuy)
+        }
+    }
+}
+
+/** One per row: a backdrop is a wide scene, and the preview is the point of the card. */
+@Composable
+private fun BackdropList(ui: ShopUiState, onBuy: (Item) -> Unit, onEquip: (Item) -> Unit) {
+    // The starter isn't for sale, but it's owned and can be put back.
+    val shown = ui.backdrops.filter { it.isPurchasable || it.id in ui.owned }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        shown.forEach { item ->
+            BackdropCard(
+                item = item,
+                owned = item.id in ui.owned,
+                inUse = item.id == ui.activeBackdropId,
+                level = ui.level,
+                busy = ui.busyItemId == item.id,
+                online = ui.online,
+                onBuy = { onBuy(item) },
+                onEquip = { onEquip(item) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackdropCard(
+    item: Item,
+    owned: Boolean,
+    inUse: Boolean,
+    level: Int,
+    busy: Boolean,
+    online: Boolean,
+    onBuy: () -> Unit,
+    onEquip: () -> Unit,
+) {
+    val locked = !owned && level < item.levelRequired
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White)
+            .padding(12.dp)
+            .testTag("shop_backdrop_${item.slug}"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        BackdropScene(
+            slug = item.slug,
+            modifier = Modifier.fillMaxWidth().height(84.dp).clip(RoundedCornerShape(12.dp)),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.name, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GgInk)
+                Text(
+                    item.rarity.replaceFirstChar { it.uppercase() },
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    color = rarityColor(item.rarity),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Box(modifier = Modifier.width(96.dp)) {
+                when {
+                    inUse -> ShopButton(text = "In use", filled = false, enabled = false, onClick = {})
+                    owned -> ShopButton(text = if (busy) "…" else "Use", filled = false, enabled = online && !busy, onClick = onEquip)
+                    locked -> ShopButton(text = "Level ${item.levelRequired}", filled = false, enabled = false, onClick = {})
+                    else -> ShopButton(text = if (busy) "…" else "🪙 ${item.priceCoins}", filled = true, enabled = online && !busy, onClick = onBuy)
+                }
+            }
         }
     }
 }

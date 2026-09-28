@@ -31,6 +31,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +39,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -97,6 +99,7 @@ import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.ui.garden.GardenUiState
 import com.gratitudegarden.app.ui.garden.GardenViewModel
 import com.gratitudegarden.app.ui.garden.LevelUp
+import com.gratitudegarden.app.ui.sprites.BackdropScene
 import com.gratitudegarden.app.ui.sprites.CoinIcon
 import com.gratitudegarden.app.ui.sprites.GgIcon
 import com.gratitudegarden.app.ui.sprites.GgIconName
@@ -122,6 +125,13 @@ import kotlin.math.roundToInt
 
 private val SoilTop = Color(0xFFA48560)
 private val SoilBottom = Color(0xFF8B6F47)
+
+/**
+ * The backdrop scene above the plot, at most. The screen doesn't scroll, so the band only
+ * gets what the plot leaves: about 55dp for a 6x5 grid on a 411x914dp phone.
+ */
+private val BackdropBandHeight = 72.dp
+private val BackdropBandMinHeight = 28.dp
 
 @Composable
 fun GardenRoute(
@@ -264,27 +274,28 @@ fun GardenScreen(
             Spacer(Modifier.height(8.dp))
         }
 
-        // Soil grid
-        GardenGrid(
-            ui = ui,
-            placing = placingItemId != null,
-            onPlantClick = { selectedPlant = it },
-            onEmptyClick = { x, y ->
-                val pid = placingItemId
-                if (!ui.online) {
-                    onNeedsConnection()
-                } else if (pid != null) {
-                    onPlantSeed(pid, x, y)
-                    onPlacementDone()
-                } else {
-                    pickerCell = x to y
-                }
-            },
-            onMovePlant = onMovePlant,
-            onDragActive = onDragActive,
-        )
-
-        Spacer(Modifier.weight(1f))
+        // Soil grid. It takes the room left above the charge dots, which the backdrop band
+        // grows into; the plot keeps its size and sits at the top.
+        Box(Modifier.fillMaxWidth().weight(1f).padding(bottom = 10.dp)) {
+            GardenGrid(
+                ui = ui,
+                placing = placingItemId != null,
+                onPlantClick = { selectedPlant = it },
+                onEmptyClick = { x, y ->
+                    val pid = placingItemId
+                    if (!ui.online) {
+                        onNeedsConnection()
+                    } else if (pid != null) {
+                        onPlantSeed(pid, x, y)
+                        onPlacementDone()
+                    } else {
+                        pickerCell = x to y
+                    }
+                },
+                onMovePlant = onMovePlant,
+                onDragActive = onDragActive,
+            )
+        }
 
         // Charge dots
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -359,7 +370,7 @@ fun GardenScreen(
 
 @Composable
 private fun LevelUpDialog(levelUp: LevelUp, onClose: (visitShop: Boolean) -> Unit) {
-    val unlocked = levelUp.unlockedSeeds
+    val unlocked = levelUp.unlocked
     Dialog(onDismissRequest = { onClose(false) }) {
         Column(
             modifier = Modifier
@@ -544,69 +555,82 @@ private fun GardenGrid(
     // dragged sprite is never occluded by a neighbouring row.
     var draggingRow by remember { mutableStateOf<Int?>(null) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Brush.verticalGradient(listOf(SoilTop, SoilBottom)))
-            .padding(10.dp),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().aspectRatio(ui.gridCols.toFloat() / ui.gridRows),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+    // The equipped backdrop is a band above the plot, in the same card: scenery behind
+    // the garden rather than under it, since the tiles would hide anything drawn beneath.
+    Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))) {
+        // Up to the full band in whatever height the plot leaves; below the minimum it's
+        // dropped rather than squashed (offline, the banner can take most of the room).
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = BackdropBandHeight)) {
+            if (maxHeight >= BackdropBandMinHeight) {
+                BackdropScene(
+                    slug = ui.activeBackdropId?.let { ui.itemSlugs[it] },
+                    modifier = Modifier.fillMaxWidth().height(maxHeight),
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(SoilTop, SoilBottom)))
+                .padding(10.dp),
         ) {
-            for (r in 0 until ui.gridRows) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .zIndex(if (draggingRow == r) 1f else 0f),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    for (c in 0 until ui.gridCols) {
-                        val plant = plantAt[r to c]
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxSize()
-                                .onSizeChanged { if (it.width > 0 && it.height > 0) cellPx = it }
-                                .background(
-                                    Brush.linearGradient(listOf(SoilTop, SoilBottom)),
-                                    RoundedCornerShape(6.dp),
-                                )
-                                .then(
-                                    if (plant == null && placing)
-                                        Modifier.border(2.dp, GgPrimary.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
-                                    else Modifier
-                                )
-                                .then(
-                                    if (plant == null)
-                                        Modifier
-                                            .semantics {
-                                                contentDescription = "Empty plot, row ${r + 1}, column ${c + 1}"
-                                            }
-                                            .clickable(onClickLabel = "Plant here") { onEmptyClick(c, r) }
-                                    else Modifier
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (plant != null) {
-                                DraggablePlant(
-                                    plant = plant,
-                                    slug = ui.itemSlugs[plant.itemId],
-                                    phaseMillis = (r * ui.gridCols + c) * 240,
-                                    cellPx = cellPx,
-                                    gapPx = gapPx,
-                                    movable = ui.online,
-                                    onTap = { onPlantClick(plant) },
-                                    onDragStart = { draggingRow = r; onDragActive(true) },
-                                    onDragStop = { draggingRow = null; onDragActive(false) },
-                                    onDrop = { tx, ty ->
-                                        val inBounds = tx in 0 until ui.gridCols && ty in 0 until ui.gridRows
-                                        val occupied = plantAt[ty to tx] != null
-                                        if (inBounds && !occupied) onMovePlant(plant.id, tx, ty)
-                                    },
-                                )
+            Column(
+                modifier = Modifier.fillMaxWidth().aspectRatio(ui.gridCols.toFloat() / ui.gridRows),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                for (r in 0 until ui.gridRows) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .zIndex(if (draggingRow == r) 1f else 0f),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        for (c in 0 until ui.gridCols) {
+                            val plant = plantAt[r to c]
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                                    .onSizeChanged { if (it.width > 0 && it.height > 0) cellPx = it }
+                                    .background(
+                                        Brush.linearGradient(listOf(SoilTop, SoilBottom)),
+                                        RoundedCornerShape(6.dp),
+                                    )
+                                    .then(
+                                        if (plant == null && placing)
+                                            Modifier.border(2.dp, GgPrimary.copy(alpha = 0.85f), RoundedCornerShape(6.dp))
+                                        else Modifier
+                                    )
+                                    .then(
+                                        if (plant == null)
+                                            Modifier
+                                                .semantics {
+                                                    contentDescription = "Empty plot, row ${r + 1}, column ${c + 1}"
+                                                }
+                                                .clickable(onClickLabel = "Plant here") { onEmptyClick(c, r) }
+                                        else Modifier
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (plant != null) {
+                                    DraggablePlant(
+                                        plant = plant,
+                                        slug = ui.itemSlugs[plant.itemId],
+                                        phaseMillis = (r * ui.gridCols + c) * 240,
+                                        cellPx = cellPx,
+                                        gapPx = gapPx,
+                                        movable = ui.online,
+                                        onTap = { onPlantClick(plant) },
+                                        onDragStart = { draggingRow = r; onDragActive(true) },
+                                        onDragStop = { draggingRow = null; onDragActive(false) },
+                                        onDrop = { tx, ty ->
+                                            val inBounds = tx in 0 until ui.gridCols && ty in 0 until ui.gridRows
+                                            val occupied = plantAt[ty to tx] != null
+                                            if (inBounds && !occupied) onMovePlant(plant.id, tx, ty)
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
