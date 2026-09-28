@@ -93,8 +93,9 @@ per unit of work.
   → place → water. Good skeleton, thin. In priority order: **streak freezes** (✅ **done**:
   one free a month plus more for coins, up to 2 held; see [Streak freezes](#streak-freezes)),
   an **XP ladder** (✅ **done**: days journaled earn levels, which unlock the shop's
-  level-gated seeds; see [XP and levels](#xp-and-levels)), backdrops you can equip (they can
-  be bought but nothing shows or equips them yet), seasons and weather, rare and evolving plants, garden expansion, and animated milestone
+  level-gated seeds; see [XP and levels](#xp-and-levels)), **backdrops you can equip**
+  (✅ **done**: one scene per level from 2 to 5, drawn above the plot; see
+  [Backdrops](#backdrops)), seasons and weather, rare and evolving plants, garden expansion, and animated milestone
   moments at 7/30/100 days.
 - **1.4 Entry experience beyond a text box — M.** Photos attached to an entry (Supabase
   Storage) — the most requested journaling feature; a mood tag per entry, which unlocks
@@ -224,7 +225,7 @@ app/src/staging/java/com/gratitudegarden/app/   # staging flavor only — never 
    └─ screens/
       └─ AdminDashboardScreen.kt   # the admin dashboard UI
 
-supabase/migrations/                # source of truth for the schema (14 files)
+supabase/migrations/                # source of truth for the schema (19 files)
 db/                                 # older hand-written SQL notes (subset of the above)
 docs/                               # perf + test-optimization write-ups
 profiling/                          # before/after profiling evidence
@@ -552,6 +553,38 @@ on this device, the Garden shows a level-up dialog naming any seeds it unlocked,
 (`LevelPreferences`), so a level reached by an entry the outbox delivered in the
 background still gets its moment the next time the Garden opens. The first level a device
 sees for an account is recorded silently.
+
+### Backdrops
+
+A backdrop is the scenery behind the garden: a painted scene in a band above the plot. The
+server side was there from the first migrations. `purchase_item` sells backdrops like any
+item, `set_active_backdrop` equips one the user owns (it's the only non-admin write path to
+`gardens.active_backdrop_item_id`), and signup gives every account the starter Cottage
+Meadow and equips it. Only the app was missing.
+
+| Backdrop | Level | Price |
+| --- | --- | --- |
+| Cottage Meadow | 1 | starter, not for sale |
+| Misty Forest | 2 | 160 |
+| Cherry Grove | 3 | 180 |
+| Quiet Shore | 4 | 200 |
+| Desert Sunset | 5 | 220 |
+
+- **One per level.** Cherry Grove was seeded at level 3 with a one-week sale window, which
+  closed in June, and had since been edited to level 1. `20260928120000_backdrop_ladder`
+  makes it permanent at level 3, so levels 2–5 each unlock one scene. The app doesn't
+  mirror `available_from`/`available_until` yet, so seasonal items need that first.
+- **Buying doesn't equip.** Each RPC does one thing: a bought backdrop's card switches to
+  "Use", the way a bought seed switches to "Plant". There's no unequip; switching back to
+  the starter is how you go plain.
+
+On the device, the equipped id rides along with the garden row into Room, so the scene
+shows offline and on a cold start. `BackdropScenes.kt` draws each scene from Canvas shapes,
+picked by slug like the plant sprites. An unknown or missing slug falls back to Cottage
+Meadow. The Shop's Backdrops tab has one card per row with a preview, locked by level and
+disabled offline. The Garden's band gets only the height the plot leaves (the screen doesn't
+scroll), up to 72dp. When the offline banner needs the room, the band hides rather than
+squash. Level-ups announce new backdrops alongside seeds.
 
 ### Daily streak reminders
 
