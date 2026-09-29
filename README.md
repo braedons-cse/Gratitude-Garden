@@ -40,7 +40,9 @@ shippable product.
   - [Accessibility (TalkBack)](#accessibility-talkback)
   - [Streak freezes](#streak-freezes)
   - [XP and levels](#xp-and-levels)
+  - [Backdrops](#backdrops)
   - [Daily streak reminders](#daily-streak-reminders)
+  - [Home-screen widget and quick replies](#home-screen-widget-and-quick-replies)
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
 - [Setup & build](#setup--build)
@@ -86,9 +88,10 @@ per unit of work.
   the polish (an offline banner, economy buttons that say they need a connection, and
   retry or discard for an entry the server refuses).
 - **1.2 Home-screen widget + richer notifications — M.** The fastest path to a daily habit
-  is not opening the app. A Glance widget showing the streak, today's plant, and a one-tap
-  "add entry" field puts the loop on the home screen; notification actions (inline reply,
-  "remind me tonight") let an entry be logged without a cold start.
+  is not opening the app. **Done**: a widget showing the garden, the streak and what's
+  left of today, with a Write button that opens the entry sheet; and a reminder you can
+  answer inline, put off for an hour, or that stays quiet once you've written. See
+  [Home-screen widget and quick replies](#home-screen-widget-and-quick-replies).
 - **1.3 Make the garden feel like a game — L.** The loop today is write → coins → buy seed
   → place → water. Good skeleton, thin. In priority order: **streak freezes** (✅ **done**:
   one free a month plus more for coins, up to 2 held; see [Streak freezes](#streak-freezes)),
@@ -153,8 +156,8 @@ per unit of work.
    strictly more painful the more code exists. Before any feature work.
 2. **The structural bet:** 1.1 offline/Room. Everything after is easier with it in place;
    everything built before it has to be retrofitted.
-3. **The retention loop:** 1.3 streak freeze (cheapest win on the list), 1.2 widget,
-   1.4 photos + mood.
+3. **The retention loop:** 1.3 streak freeze (cheapest win on the list), 1.2 widget
+   (✅ done), 1.4 photos + mood.
 4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting, 0.7 listing assets → ship
    to a closed track and get ~20 real testers before public release.
 5. **Post-launch:** 1.5 insights, 2.1 privacy features, 2.3 monetization, 2.4 localization.
@@ -182,6 +185,7 @@ These block or reshape the work above and should be settled before building.
 | Serialization | `kotlinx.serialization` (partial DTOs, `ignoreUnknownKeys = true`) |
 | Local prefs | DataStore (reminder on/off + time-of-day) |
 | Reminders | `AlarmManager` (inexact, Doze-safe) + `BootReceiver`; no exact-alarm permission |
+| Widget | Jetpack Glance (`glance-appwidget` `1.2.0`) |
 
 ---
 
@@ -197,10 +201,19 @@ app/src/main/java/com/gratitudegarden/app/
 │  └─ GardenRepository.kt          # user-facing reads + RPC calls (auth, journal, garden, shop)
 ├─ notifications/
 │  ├─ ReminderScheduler.kt         # schedules/cancels the daily alarm
-│  ├─ ReminderReceiver.kt          # fires -> posts the notification, re-arms
+│  ├─ ReminderReceiver.kt          # fires -> re-arms, posts unless written today; "Later"
+│  ├─ ReplyReceiver.kt             # a thought written inline in the reminder
 │  ├─ ReminderNotifications.kt     # channel + notification construction
 │  ├─ ReminderPreferences.kt       # DataStore-backed on/off + time-of-day
 │  └─ BootReceiver.kt              # re-arms after reboot / app update
+├─ widget/
+│  ├─ GardenWidget.kt              # the Glance widget and its three layouts
+│  ├─ GardenWidgetReceiver.kt      # system entry point; midnight + clock/zone changes
+│  ├─ WidgetSync.kt                # keeps the widget's state current, pushes changes
+│  ├─ WidgetState.kt               # what it shows, derived from the Garden's rows
+│  ├─ GardenSnapshot.kt            # paints the garden card into a bitmap
+│  ├─ WidgetMidnight.kt            # the redraw alarm at local midnight
+│  └─ WidgetPreviews.kt            # the picker's generated preview (Android 15+)
 ├─ model/
 ├─ ui/
 │  ├─ GardenApp.kt                 # top-level nav: auth flow vs HomeScaffold + routes
@@ -598,8 +611,11 @@ The app sends a **daily reminder notification** to help users keep their streak 
 - **Notification settings (top of the Me screen):** an enable/disable **switch** and a
   **time-of-day picker**. If notifications are off for the app at the OS level, the card
   explains this and links to system settings.
+- **Only when it's needed.** The reminder is about the streak, so on a day something has
+  already been written it stays quiet (and still re-arms for tomorrow). It can be answered
+  without opening the app; see [quick replies](#home-screen-widget-and-quick-replies).
 - **Scheduling — `AlarmManager`.** `ReminderScheduler` sets the daily alarm;
-  `ReminderReceiver` posts the notification and re-arms for the next day. Because
+  `ReminderReceiver` re-arms for the next day, then posts the notification. Because
   AlarmManager alarms are cleared on reboot, `BootReceiver` re-arms on `BOOT_COMPLETED`
   and `MY_PACKAGE_REPLACED`. The alarm is deliberately **inexact**
   (`setAndAllowWhileIdle`): it still wakes the device from Doze but may arrive a few
@@ -610,6 +626,40 @@ The app sends a **daily reminder notification** to help users keep their streak 
 - **Persistence split:** reminder **preferences** (on/off + time) are stored on-device via
   DataStore; only the once-per-user **prompt flag** is stored in Supabase. Backend change:
   migration `add_notif_prompt_seen_to_user_settings`.
+
+### Home-screen widget and quick replies
+
+Roadmap 1.2: the daily loop without opening the app. Both lean on the offline journal
+(1.1): the widget draws from Room, so it's instant and works offline, and a reply is
+written like any entry, Room first and then the outbox.
+
+- **The widget.** The garden as it stands (backdrop and plants, painted by the same code
+  as the Garden screen), the streak with the flame or, when a freeze is holding it, the
+  snowflake, "N thoughts left today", and **Write**. It lays itself out by its real size:
+  narrow is the streak and Write, wide puts the garden beside them, tall above. Signed
+  out, it asks you to sign in.
+- **Write** (the widget's button, or tapping the reminder) opens the app on the Garden
+  with the entry sheet up. It waits through sign-in if needed, and isn't replayed by a
+  rotation or a relaunch from Recents.
+- **Reply inline.** "Plant a thought" on the reminder takes the text right there. It is
+  saved and, when there's a connection, planted within a few seconds; the reminder is then
+  replaced by what the Garden would have said ("+5 coins · +10 XP · a kind thought
+  planted 🌱", or "Saved in your journal…" offline). If it can't be saved (the day's cap,
+  signed out), the text is shown back so it isn't lost. A level-up is still celebrated the
+  next time the Garden opens.
+- **Later** puts the reminder off for about an hour (the alarm is inexact, like the daily
+  one). It's skipped if something is written in the meantime, and dropped on sign-out.
+
+On the device, `WidgetSync` holds the widget's state for the life of the process. Room's
+invalidation tracker tells it when one of the widget's tables changes (a submit, a sync, a
+sign-out), and it pushes the widget only when the state actually differs. "Today" also
+moves without the database noticing, so `WidgetMidnight` re-reads just after local
+midnight (a non-waking alarm) and the receiver re-reads on a clock or time zone change.
+`GardenSnapshot` paints the garden into one bitmap of at most 150k pixels, since it
+reaches the launcher over Binder, shared by every layout. Nothing runs unless a widget
+exists. `ReplyReceiver` waits up to three seconds for the session's token and four for
+delivery, which keeps it inside a receiver's ten; anything slower is left to
+`OutboxWorker`.
 
 ### Account deletion
 
