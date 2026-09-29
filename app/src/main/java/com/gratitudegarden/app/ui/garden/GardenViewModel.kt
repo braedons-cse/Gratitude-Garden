@@ -1,6 +1,7 @@
 package com.gratitudegarden.app.ui.garden
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
@@ -10,6 +11,7 @@ import com.gratitudegarden.app.data.GardenPlantRow
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.data.LevelPreferences
+import com.gratitudegarden.app.data.PhotoPreparer
 import com.gratitudegarden.app.data.StreakStatus
 import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.notifications.ReminderPreferences
@@ -28,6 +30,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** A level reached and not yet congratulated on this device, and the seeds and backdrops it opened up. */
 data class LevelUp(val level: Int, val unlocked: List<String>)
@@ -65,6 +68,7 @@ data class GardenUiState(
 class GardenViewModel(
     private val repo: GardenRepository,
     private val appContext: Context,
+    private val photos: PhotoPreparer,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(GardenUiState())
@@ -162,17 +166,26 @@ class GardenViewModel(
         }
     }
 
-    fun submit(text: String, voice: Boolean) {
-        if (text.isBlank() || _ui.value.submitting) return
+    /** Turn a picked or captured image into the photo that would be saved with the entry. */
+    suspend fun preparePhoto(uri: Uri): File = photos.prepare(uri)
+
+    /** [photo], if any, is a staged file from [preparePhoto], now this call's to dispose of. */
+    fun submit(text: String, voice: Boolean, photo: File? = null) {
+        if (text.isBlank() || _ui.value.submitting) {
+            photo?.delete()
+            return
+        }
         // A held streak is one the server bridges with freezes on this entry, the day's first.
         val freezing = _ui.value.streakHeld
         _ui.update { it.copy(submitting = true) }
         viewModelScope.launch {
             try {
-                val message = submitMessage(repo.submitEntry(text.trim(), voice), freezing)
+                val message = submitMessage(repo.submitEntry(text.trim(), voice, photo), freezing)
                 _ui.update { it.copy(submitting = false, message = message) }
                 maybeOfferReminders()
             } catch (e: Exception) {
+                // Not saved, so the staged copy is nobody's now.
+                photo?.delete()
                 _ui.update { it.copy(submitting = false, message = e.toSubmitMessage()) }
             }
         }
@@ -286,6 +299,8 @@ class GardenViewModel(
         /** What a level-up announces as newly in the shop. */
         private val UNLOCKABLE = setOf("seed", "backdrop")
 
-        val Factory = viewModelFactory { initializer { GardenViewModel(repo(), gardenApp()) } }
+        val Factory = viewModelFactory {
+            initializer { GardenViewModel(repo(), gardenApp(), gardenApp().container.photoPreparer) }
+        }
     }
 }

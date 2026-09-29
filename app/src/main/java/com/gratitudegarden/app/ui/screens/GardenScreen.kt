@@ -92,7 +92,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gratitudegarden.app.ui.components.PhotoPickerRow
 import com.gratitudegarden.app.ui.components.PillButton
+import com.gratitudegarden.app.ui.components.rememberPhotoDraft
 import com.gratitudegarden.app.util.LogComposableLifecycle
 import com.gratitudegarden.app.util.LogTags
 import com.gratitudegarden.app.util.findActivity
@@ -122,6 +124,7 @@ import com.gratitudegarden.app.ui.theme.GgMoss
 import com.gratitudegarden.app.ui.theme.GgPrimary
 import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import com.gratitudegarden.app.ui.theme.pressScale
+import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.drop
@@ -153,7 +156,8 @@ fun GardenRoute(
     if (ui.loading) return
     GardenScreen(
         ui = ui,
-        onSubmit = { text, voice -> vm.submit(text, voice) },
+        onSubmit = { text, voice, photo -> vm.submit(text, voice, photo) },
+        preparePhoto = vm::preparePhoto,
         onWater = vm::water,
         onMessageShown = vm::consumeMessage,
         onReminderPromptDecided = vm::onReminderPromptDecided,
@@ -176,7 +180,8 @@ fun GardenRoute(
 @Composable
 fun GardenScreen(
     ui: GardenUiState,
-    onSubmit: (String, Boolean) -> Unit,
+    onSubmit: (text: String, voice: Boolean, photo: File?) -> Unit,
+    preparePhoto: suspend (Uri) -> File = { error("no photo preparer") },
     onWater: (String) -> Unit,
     onMessageShown: () -> Unit,
     onReminderPromptDecided: (Boolean) -> Unit = {},
@@ -352,6 +357,7 @@ fun GardenScreen(
             submitting = ui.submitting,
             onDismiss = { showSheet = false },
             onSubmit = onSubmit,
+            preparePhoto = preparePhoto,
         )
     }
 
@@ -946,16 +952,19 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
     }
 }
 
-// ── New entry sheet (voice + text) ───────────────────────────────
+// ── New entry sheet (voice + text + photo) ───────────────────────
 // `internal` (not `private`) so the androidTest source set can drive it in isolation.
 @Composable
 internal fun NewEntrySheet(
     submitting: Boolean,
     onDismiss: () -> Unit,
-    onSubmit: (String, Boolean) -> Unit,
+    /** [photo] is handed over: from then on it's the receiver's to save or delete. */
+    onSubmit: (text: String, voice: Boolean, photo: File?) -> Unit,
+    preparePhoto: suspend (Uri) -> File,
 ) {
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
+    val photo = rememberPhotoDraft(preparePhoto)
     var isVoice by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
@@ -1108,12 +1117,23 @@ internal fun NewEntrySheet(
                 )
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(12.dp))
+            PhotoPickerRow(
+                draft = photo,
+                hasPhoto = photo.staged != null,
+                shown = photo.staged,
+                onRemove = photo::drop,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !submitting,
+            )
+
+            Spacer(Modifier.height(16.dp))
 
             PillButton(
                 text = if (submitting) "Planting…" else "Plant it",
-                onClick = { onSubmit(text, isVoice) },
-                enabled = text.isNotBlank() && !submitting,
+                onClick = { onSubmit(text, isVoice, photo.handOver()) },
+                // Text is still what makes an entry; a photo only goes with one.
+                enabled = text.isNotBlank() && !submitting && !photo.preparing,
                 modifier = Modifier.fillMaxWidth(),
                 testTag = "plant_it_button",
             )
