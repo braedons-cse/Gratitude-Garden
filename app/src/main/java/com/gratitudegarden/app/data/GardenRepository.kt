@@ -803,6 +803,31 @@ class GardenRepository(
     }
 
     /**
+     * [awaitSessionSettled], then whose session it is. For a receiver in a fresh process:
+     * without the wait an entry is still written (the user is known almost at once) but can't
+     * be delivered, because the token isn't ready. Offline with an expired token the status
+     * never settles, and the stored session answers after [timeout].
+     */
+    suspend fun awaitReady(timeout: Duration): AppSession {
+        awaitSessionSettled(timeout)
+        return withTimeoutOrNull(1.seconds) { session.first { it !is AppSession.Loading } }
+            ?: AppSession.Loading
+    }
+
+    /**
+     * Whether anything was written today; null when nobody is signed in. Counts deleted
+     * entries, like the cap: the thought was still written. An entry from another device
+     * shows up through the streak's last day once the stats have synced, before the entry has.
+     */
+    suspend fun wroteToday(): Boolean? {
+        val uid = currentUid() ?: return null
+        val today = entryDay(Instant.now(), ZoneId.systemDefault()).toString()
+        if (db.entryDao().countOn(uid, today) > 0) return true
+        val lastEntryDate = db.statsDao().observe(uid).first()?.lastEntryDate
+        return lastEntryDate != null && lastEntryDate >= today
+    }
+
+    /**
      * Send a refused entry again, with its text as it is now. It goes as a submit followed by
      * an edit: if the server never received it, the submit creates it (under its original id
      * and write time); if it did, the submit is recognised and changes nothing, and the edit

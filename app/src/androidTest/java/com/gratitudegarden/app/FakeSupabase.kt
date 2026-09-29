@@ -85,6 +85,9 @@ class FakeSupabase {
 
     val today: String = LocalDate.now().toString()
 
+    /** The streak's last day in `user_stats`: another device's entry shows up here first. */
+    @Volatile var lastEntryDate: String = today
+
     data class Entry(
         val id: String,
         var text: String,
@@ -226,7 +229,7 @@ class FakeSupabase {
         "profiles" -> """[{"display_name":"$displayName","level":${levelForXp(xp)},"xp":$xp,"is_admin":false}]"""
         "coin_wallets" -> """[{"balance":$balance}]"""
         "user_stats" -> """[{"total_entries":${entries.count { it.deletedAt == null }},"current_streak":2,"longest_streak":5,""" +
-            """"last_entry_date":"$today","streak_freezes":$freezes,"freeze_grant_month":"${LocalDate.now().withDayOfMonth(1)}"}]"""
+            """"last_entry_date":"$lastEntryDate","streak_freezes":$freezes,"freeze_grant_month":"${LocalDate.now().withDayOfMonth(1)}"}]"""
         "streak_frozen_days" -> frozenDays.joinToString(",", "[", "]") { """{"day":"$it"}""" }
         "user_settings" -> """[{"notif_prompt_seen":false,"daily_entry_cap":$dailyCap}]"""
         "gardens" -> gardenName?.let {

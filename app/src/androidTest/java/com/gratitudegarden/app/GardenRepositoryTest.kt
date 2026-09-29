@@ -35,6 +35,7 @@ import org.junit.Test
 import org.junit.rules.Timeout
 import org.junit.runner.RunWith
 import java.time.LocalDate
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
 /**
@@ -515,6 +516,47 @@ class GardenRepositoryTest {
         repo.signOut()
 
         assertEquals(0, db.outboxDao().size())
+    }
+
+    // ── The reminder and the inline reply, from outside the app ───────
+
+    @Test
+    fun nothingWrittenTodayMeansTheReminderPosts() = runBlocking {
+        fake.lastEntryDate = LocalDate.now().minusDays(1).toString()
+        signIn()
+
+        assertEquals(false, repo.wroteToday())
+    }
+
+    @Test
+    fun aDeletedEntryStillCountsAsWrittenToday() = runBlocking {
+        fake.lastEntryDate = LocalDate.now().minusDays(1).toString()
+        signIn()
+        repo.submitEntry("written, then deleted", voice = false)
+        repo.deleteEntry(journal().single().id)
+
+        assertEquals(true, repo.wroteToday())
+    }
+
+    @Test
+    fun anotherDevicesEntryCountsOnceItsStatsHaveSynced() = runBlocking {
+        // The fake's stats say today; no entry has reached this device.
+        signIn()
+        assertEquals(0, db.entryDao().countOn(fake.userId, LocalDate.now().toString()))
+
+        assertEquals(true, repo.wroteToday())
+    }
+
+    @Test
+    fun signedOutNobodyHasWritten() = runBlocking {
+        assertNull(repo.wroteToday())
+    }
+
+    @Test
+    fun awaitReadyAnswersWithTheSessionOnceTheTokenIsTried() = runBlocking {
+        signIn()
+
+        assertEquals(AppSession.SignedIn(fake.userId), repo.awaitReady(1.seconds))
     }
 
     // ── Refused entries: retry and discard ────────────────────────────
