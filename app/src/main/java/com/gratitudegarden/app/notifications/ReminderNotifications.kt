@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.PendingIntentCompat
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.gratitudegarden.app.MainActivity
 import kotlin.random.Random
@@ -27,6 +29,14 @@ data class ReminderMessage(val title: String, val body: String)
 object ReminderNotifications {
     const val CHANNEL_ID = "daily_reminder"
     const val NOTIFICATION_ID = 1001
+
+    /** The inline reply's text, in the results [ReplyReceiver] reads. */
+    const val KEY_REPLY_TEXT = "reply_text"
+
+    // Each PendingIntent gets its own request code, so none replaces another.
+    private const val REQUEST_WRITE = 1
+    private const val REQUEST_REPLY = 2
+    private const val REQUEST_LATER = 3
 
     /**
      * Pool of reminder variants. One is picked each time the alarm fires (see
@@ -98,42 +108,114 @@ object ReminderNotifications {
 
     /**
      * Build and post the daily reminder notification using [MESSAGES]`[index]`.
-     * Tapping it opens the app. Called from [ReminderReceiver] when the alarm fires.
-     * Safe to call from a cold-started process — the channel is (re)created first.
+     * Tapping it opens the app with the entry sheet up. [canReply] adds the inline reply,
+     * which needs someone signed in to write for. Called from [ReminderReceiver] when the
+     * alarm fires. Safe to call from a cold-started process — the channel is (re)created first.
      */
-    fun postReminder(context: Context, index: Int) {
-        ensureChannel(context)
-
-        // API 33+: silently skip if the runtime grant is missing or was revoked.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-
-        val openApp = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val contentIntent = PendingIntent.getActivity(
-            context,
-            0,
-            openApp,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+    fun postReminder(context: Context, index: Int, canReply: Boolean) {
+        if (!canPost(context)) return
 
         val message = MESSAGES[index.coerceIn(MESSAGES.indices)]
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(message.title)
             .setContentText(message.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message.body))
             .setAutoCancel(true)
-            .setContentIntent(contentIntent)
+            .setContentIntent(writeIntent(context))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
+        if (canReply) builder.addAction(replyAction(context))
+        builder.addAction(laterAction(context))
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+    }
+
+    /**
+     * Replace the reminder with how an inline reply went. It must always be re-posted, or
+     * the reply field keeps spinning. [written] is shown back, so a thought the garden
+     * couldn't take isn't lost; a saved one is left to the system's own echo of the reply.
+     */
+    fun postReplyResult(context: Context, message: String, written: String?) {
+        if (!canPost(context)) return
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(message)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(openIntent(context))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        if (!written.isNullOrBlank()) {
+            builder.setContentText("“$written”")
+                .setStyle(NotificationCompat.BigTextStyle().bigText("“$written”"))
+        }
+
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+    }
+
+    fun dismiss(context: Context) = NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+
+    private fun canPost(context: Context): Boolean {
+        ensureChannel(context)
+        // API 33+: silently skip if the runtime grant is missing or was revoked.
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun writeIntent(context: Context): PendingIntent = PendingIntent.getActivity(
+        context,
+        REQUEST_WRITE,
+        MainActivity.writeIntent(context),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun openIntent(context: Context): PendingIntent {
+        val openApp = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            context,
+            0,
+            openApp,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+    }
+
+    // RemoteInput fills the text into the intent, so this one PendingIntent must be mutable.
+    // It is explicit (our own receiver), which is what makes mutable safe.
+    private fun replyAction(context: Context): NotificationCompat.Action {
+        val intent = Intent(context, ReplyReceiver::class.java).setAction(ReplyReceiver.ACTION_REPLY)
+        val pending = PendingIntentCompat.getBroadcast(
+            context,
+            REQUEST_REPLY,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT,
+            true,
+        )
+        val input = RemoteInput.Builder(KEY_REPLY_TEXT)
+            .setLabel("Something you're grateful for…")
+            .build()
+        return NotificationCompat.Action.Builder(0, "Plant a thought", pending)
+            .addRemoteInput(input)
+            .setAllowGeneratedReplies(false)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
+    }
+
+    private fun laterAction(context: Context): NotificationCompat.Action {
+        val intent = Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.ACTION_LATER)
+        val pending = PendingIntent.getBroadcast(
+            context,
+            REQUEST_LATER,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Action.Builder(0, "Later", pending)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MUTE)
+            .setShowsUserInterface(false)
+            .build()
     }
 
     /**

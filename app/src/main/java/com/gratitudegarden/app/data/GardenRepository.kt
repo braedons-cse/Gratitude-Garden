@@ -682,7 +682,8 @@ class GardenRepository(
 
     /**
      * Write a gratitude entry. It is in the journal immediately, and delivered straight
-     * away when the server can be reached within [SUBMIT_WAIT].
+     * away when the server can be reached within [wait] (a receiver has less time than a
+     * screen). Past it the entry is delivered in the background.
      *
      * The coin reward is decided **server-side**: it varies with the streak and how
      * substantive the entry is, so nothing here names an amount. The anon key ships in the
@@ -692,7 +693,7 @@ class GardenRepository(
      * The day's cap is checked here too, against the mirrored `daily_entry_cap`, so an
      * entry past it is refused now rather than written offline and refused at sync.
      */
-    suspend fun submitEntry(text: String, voice: Boolean): SubmitResult {
+    suspend fun submitEntry(text: String, voice: Boolean, wait: Duration = SUBMIT_WAIT): SubmitResult {
         val uid = currentUid() ?: throw IllegalStateException("Not signed in.")
         val id = UUID.randomUUID().toString()
         val now = Instant.now()
@@ -735,7 +736,7 @@ class GardenRepository(
         }
         outboxScheduler.schedule()
         // Delivery runs in [scope], so running out of patience here only stops the waiting.
-        withTimeoutOrNull(SUBMIT_WAIT) { runCatching { drainOutbox() } }
+        withTimeoutOrNull(wait) { runCatching { drainOutbox() } }
         currentCoroutineContext().ensureActive()
         val entry = db.entryDao().get(id)
         return when (entry?.syncState) {

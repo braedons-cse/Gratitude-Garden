@@ -34,9 +34,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Fires when the daily reminder alarm goes off; posts the notification. -->
+        <!-- Fires when the daily reminder alarm (or its snooze) goes off; posts the
+             notification. Also the notification's "Later". -->
         <receiver
             android:name=".notifications.ReminderReceiver"
+            android:exported="false" />
+
+        <!-- A thought written straight into the reminder notification. -->
+        <receiver
+            android:name=".notifications.ReplyReceiver"
             android:exported="false" />
 
         <!-- Re-arms the reminder after reboot / app update. Exported so the system

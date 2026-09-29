@@ -179,7 +179,10 @@ private fun HomeScaffold(
                             placingItemId = pendingPlacement,
                             onPlacementDone = { pendingPlacement = null },
                             onDragActive = { gardenDragging = it },
-                            openEntrySheet = writeRequested,
+                            // Only once the pager has settled here: a Garden page composed
+                            // mid-swipe can be disposed with the sheet open in it.
+                            openEntrySheet = writeRequested &&
+                                pagerState.settledPage == 0 && !pagerState.isScrollInProgress,
                             onEntrySheetOpened = onWriteHandled,
                             onOpenShop = {
                                 val shop = tabs.indexOfFirst { it.route == "shop" }

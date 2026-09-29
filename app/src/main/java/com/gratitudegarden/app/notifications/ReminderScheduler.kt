@@ -26,11 +26,17 @@ import java.time.LocalTime
  *
  * Reboot: AlarmManager alarms do NOT survive a restart, so [BootReceiver] re-arms
  * them on BOOT_COMPLETED. Callers also re-arm on app launch (see MeViewModel).
+ *
+ * The reminder's "Later" sets a second, one-shot alarm [SNOOZE] ahead on its own request
+ * code, so it never replaces tomorrow's. A reboot drops it, which is fine for an hour's nudge.
  */
 object ReminderScheduler {
     // Stable request code so re-scheduling replaces the existing alarm/PendingIntent.
     private const val REQUEST_CODE = 4201
+    private const val SNOOZE_REQUEST_CODE = 4202
     const val ACTION_FIRE = "com.gratitudegarden.app.ACTION_REMINDER_FIRE"
+    const val ACTION_SNOOZE_FIRE = "com.gratitudegarden.app.ACTION_REMINDER_SNOOZE_FIRE"
+    val SNOOZE: Duration = Duration.ofHours(1)
 
     fun schedule(context: Context, hour: Int, minute: Int) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -40,16 +46,36 @@ object ReminderScheduler {
         alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pending)
     }
 
+    /** Stops the daily reminder, and a snoozed one with it. */
     fun cancel(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         alarmManager.cancel(firePendingIntent(context))
+        cancelSnooze(context)
     }
 
-    private fun firePendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, ReminderReceiver::class.java).setAction(ACTION_FIRE)
+    /** Remind once more, [SNOOZE] from now. Asking again moves it rather than adding one. */
+    fun snooze(context: Context) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        val triggerAtMillis = System.currentTimeMillis() + SNOOZE.toMillis()
+        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, snoozePendingIntent(context))
+    }
+
+    fun cancelSnooze(context: Context) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        alarmManager.cancel(snoozePendingIntent(context))
+    }
+
+    private fun firePendingIntent(context: Context): PendingIntent =
+        receiverPendingIntent(context, REQUEST_CODE, ACTION_FIRE)
+
+    private fun snoozePendingIntent(context: Context): PendingIntent =
+        receiverPendingIntent(context, SNOOZE_REQUEST_CODE, ACTION_SNOOZE_FIRE)
+
+    private fun receiverPendingIntent(context: Context, requestCode: Int, action: String): PendingIntent {
+        val intent = Intent(context, ReminderReceiver::class.java).setAction(action)
         return PendingIntent.getBroadcast(
             context,
-            REQUEST_CODE,
+            requestCode,
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
