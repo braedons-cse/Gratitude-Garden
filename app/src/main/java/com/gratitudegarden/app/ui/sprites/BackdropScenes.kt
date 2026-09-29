@@ -38,26 +38,28 @@ private val Soil = Color(0xFFA48560)
 /** Decorative: no semantics, since the scene is the same idea as a wallpaper. */
 @Composable
 fun BackdropScene(slug: String?, modifier: Modifier) {
-    val scene = Backdrop.forSlug(slug)
-    Canvas(modifier = modifier) {
-        when (scene) {
-            Backdrop.CottageMeadow -> drawCottageMeadow()
-            Backdrop.MistyForest -> drawMistyForest()
-            Backdrop.CherryGrove -> drawCherryGrove()
-            Backdrop.QuietShore -> drawQuietShore()
-            Backdrop.DesertSunset -> drawDesertSunset()
-        }
-        // Fade the last strip into the soil so the band and the plot read as one card.
-        drawRect(
-            brush = Brush.verticalGradient(
-                listOf(Soil.copy(alpha = 0f), Soil),
-                startY = size.height * 0.84f,
-                endY = size.height,
-            ),
-            topLeft = Offset(0f, size.height * 0.84f),
-            size = Size(size.width, size.height * 0.16f),
-        )
+    Canvas(modifier = modifier) { drawBackdrop(slug) }
+}
+
+/** The scene for [slug], filling the draw area. Also painted off screen for the home-screen widget. */
+internal fun DrawScope.drawBackdrop(slug: String?) {
+    when (Backdrop.forSlug(slug)) {
+        Backdrop.CottageMeadow -> drawCottageMeadow()
+        Backdrop.MistyForest -> drawMistyForest()
+        Backdrop.CherryGrove -> drawCherryGrove()
+        Backdrop.QuietShore -> drawQuietShore()
+        Backdrop.DesertSunset -> drawDesertSunset()
     }
+    // Fade the last strip into the soil so the band and the plot read as one card.
+    drawRect(
+        brush = Brush.verticalGradient(
+            listOf(Soil.copy(alpha = 0f), Soil),
+            startY = size.height * 0.84f,
+            endY = size.height,
+        ),
+        topLeft = Offset(0f, size.height * 0.84f),
+        size = Size(size.width, size.height * 0.16f),
+    )
 }
 
 private fun DrawScope.sky(top: Color, bottom: Color) {

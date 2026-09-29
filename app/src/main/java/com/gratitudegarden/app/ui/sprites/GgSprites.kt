@@ -184,12 +184,15 @@ fun Plant(
     phaseMillis: Int = 0,
 ) {
     val swaying = if (idle) modifier.plantSway(phaseMillis) else modifier
-    Canvas(modifier = swaying) {
-        when (stage) {
-            1 -> drawSprout(colors)
-            2 -> drawSapling(colors)
-            else -> drawMaturePlant(colors)
-        }
+    Canvas(modifier = swaying) { drawPlant(colors, stage) }
+}
+
+/** A plant at sprite [stage], filling the draw area. Also painted off screen for the home-screen widget. */
+internal fun DrawScope.drawPlant(colors: PlantColors, stage: Int) {
+    when (stage) {
+        1 -> drawSprout(colors)
+        2 -> drawSapling(colors)
+        else -> drawMaturePlant(colors)
     }
 }
 
