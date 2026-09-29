@@ -45,6 +45,22 @@
             android:name=".notifications.ReplyReceiver"
             android:exported="false" />
 
+        <!-- The home-screen widget. Also takes its midnight alarm and clock / time zone
+             changes (both exempt from the implicit-broadcast limits). -->
+        <receiver
+            android:name=".widget.GardenWidgetReceiver"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/garden_widget_info" />
+        </receiver>
+
         <!-- Re-arms the reminder after reboot / app update. Exported so the system
              can deliver BOOT_COMPLETED. -->
         <receiver

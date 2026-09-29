@@ -18,6 +18,7 @@ import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.serializer.KotlinXSerializer
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -557,6 +558,20 @@ class GardenRepositoryTest {
         signIn()
 
         assertEquals(AppSession.SignedIn(fake.userId), repo.awaitReady(1.seconds))
+    }
+
+    @Test
+    fun anEntryWrittenTellsTheWidget() = runBlocking {
+        signIn()
+        val changes = Channel<Unit>(Channel.UNLIMITED)
+        val watching = launch { repo.widgetChanges().collect { changes.send(it) } }
+        withTimeout(5_000) { changes.receive() } // the initial state
+
+        fake.offline = true
+        repo.submitEntry("told the widget", voice = false)
+
+        withTimeout(5_000) { changes.receive() }
+        watching.cancel()
     }
 
     // ── Refused entries: retry and discard ────────────────────────────

@@ -121,6 +121,9 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
 
+    // The home-screen widget: the garden, the streak, and a way in to write
+    implementation(libs.androidx.glance.appwidget)
+
     // Supabase (auth + postgrest) over Ktor, using kotlinx-serialization
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.auth)

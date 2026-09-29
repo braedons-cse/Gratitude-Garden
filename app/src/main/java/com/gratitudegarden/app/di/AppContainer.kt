@@ -6,6 +6,7 @@ import com.gratitudegarden.app.data.ConnectivityMonitor
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.WorkManagerOutboxScheduler
 import com.gratitudegarden.app.data.local.GardenDatabase
+import com.gratitudegarden.app.widget.WidgetSync
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
@@ -16,8 +17,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * Manual service locator. Holds the singleton [SupabaseClient] (Auth + Postgrest),
- * the local [GardenDatabase], the [ConnectivityMonitor], and the [GardenRepository], which
- * hands its journal outbox to WorkManager.
+ * the local [GardenDatabase], the [ConnectivityMonitor], the [GardenRepository], which
+ * hands its journal outbox to WorkManager, and the home-screen widget's [WidgetSync].
  */
 class AppContainer(private val context: Context) {
 
@@ -45,4 +46,7 @@ class AppContainer(private val context: Context) {
     val gardenRepository: GardenRepository by lazy {
         GardenRepository(supabase, database, connectivity, WorkManagerOutboxScheduler(context))
     }
+
+    // Lazy, and only touched once a widget exists (see WidgetSync).
+    val widgetSync: WidgetSync by lazy { WidgetSync(context, gardenRepository) }
 }

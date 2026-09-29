@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Gratitude Garden</string>
+    <string name="widget_description">Your garden, your streak, and a way in to write</string>
 </resources>

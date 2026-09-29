@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- GgIconName.Flame, in the accent colour: the streak is alive. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#F4A261"
+        android:pathData="M12 2 C12 2 7 7 7 12 a5 5 0 0 0 10 0 C17 9 14 7 12 2 Z" />
+</vector>

@@ -34,6 +34,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -444,6 +445,17 @@ class GardenRepository(
     fun observeDailyCap(): Flow<Int> =
         ofUser(SettingsEntity.DEFAULT_DAILY_CAP) { uid ->
             db.accountDao().observeSettings(uid).map { it?.dailyEntryCap ?: SettingsEntity.DEFAULT_DAILY_CAP }
+        }
+
+    /**
+     * Fires when anything the home-screen widget shows may have changed: who is signed in,
+     * or a write to one of its tables. It carries no data. The reader re-reads, with "today"
+     * as it is then, which the flows above can't do: they fix the day when they're created.
+     */
+    fun widgetChanges(): Flow<Unit> =
+        session.flatMapLatest { s ->
+            if (s is AppSession.Loading) emptyFlow()
+            else db.invalidationTracker.createFlow(*WIDGET_TABLES, emitInitialState = true).map { }
         }
 
     /**
@@ -1124,6 +1136,11 @@ class GardenRepository(
          * How long a submit waits to be delivered before reporting it saved instead. It is
          * delivered all the same; this only bounds the "Planting…" spinner.
          */
+        /** What the home-screen widget reads: the streak, the day's count and cap, the garden. */
+        private val WIDGET_TABLES = arrayOf(
+            "user_stats", "gratitude_entries", "user_settings", "garden", "garden_plants", "items",
+        )
+
         val SUBMIT_WAIT = 8.seconds
 
         /**
