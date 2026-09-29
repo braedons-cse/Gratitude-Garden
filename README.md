@@ -100,10 +100,11 @@ per unit of work.
   (✅ **done**: one scene per level from 2 to 5, drawn above the plot; see
   [Backdrops](#backdrops)), seasons and weather, rare and evolving plants, garden expansion, and animated milestone
   moments at 7/30/100 days.
-- **1.4 Entry experience beyond a text box — M.** Photos attached to an entry (Supabase
-  Storage) — the most requested journaling feature; a mood tag per entry, which unlocks
-  1.5; rotating daily prompts for the blank-page problem; multiple entries per day with a
-  day-detail view; and lists/line breaks that survive a round trip.
+- **1.4 Entry experience beyond a text box — M.** **Photos** attached to an entry (✅
+  **done**: one per entry, from the gallery or the camera, added or changed later in Edit,
+  and written offline like the text; see [Entry photos](#entry-photos)); a mood tag per
+  entry, which unlocks 1.5; rotating daily prompts for the blank-page problem; multiple
+  entries per day with a day-detail view; and lists/line breaks that survive a round trip.
 - **1.5 Insights / "your year in gratitude" — M.** Once entries carry mood and timestamps:
   themes over time, mood against streak length, "on this day last year", and a shareable
   year-in-review card — also the cheapest organic acquisition channel available to us.
@@ -181,11 +182,12 @@ These block or reshape the work above and should be settled before building.
 | Navigation | `androidx.navigation:navigation-compose` |
 | State | `ViewModel` + `StateFlow`, collected with `collectAsStateWithLifecycle` |
 | DI | Manual service locator (`AppContainer` held by the `Application`) — no Hilt |
-| Backend | Supabase Auth + PostgREST via `io.github.jan-tennert.supabase` (BOM `3.6.0`) over Ktor/OkHttp |
+| Backend | Supabase Auth + PostgREST + Storage via `io.github.jan-tennert.supabase` (BOM `3.6.0`) over Ktor/OkHttp |
 | Serialization | `kotlinx.serialization` (partial DTOs, `ignoreUnknownKeys = true`) |
 | Local prefs | DataStore (reminder on/off + time-of-day) |
 | Reminders | `AlarmManager` (inexact, Doze-safe) + `BootReceiver`; no exact-alarm permission |
 | Widget | Jetpack Glance (`glance-appwidget` `1.2.0`) |
+| Images | Coil 3 (`coil-compose` `3.4.0`), local files only; 3.5+ needs Kotlin 2.4 |
 
 ---
 
@@ -198,7 +200,8 @@ app/src/main/java/com/gratitudegarden/app/
 ├─ di/
 │  └─ AppContainer.kt              # SupabaseClient + repositories (manual DI)
 ├─ data/
-│  └─ GardenRepository.kt          # user-facing reads + RPC calls (auth, journal, garden, shop)
+│  ├─ GardenRepository.kt          # user-facing reads + RPC calls (auth, journal, garden, shop)
+│  └─ EntryPhotos.kt               # photo paths, sizing, and PhotoPreparer (pick -> stored JPEG)
 ├─ notifications/
 │  ├─ ReminderScheduler.kt         # schedules/cancels the daily alarm
 │  ├─ ReminderReceiver.kt          # fires -> re-arms, posts unless written today; "Later"
@@ -218,7 +221,7 @@ app/src/main/java/com/gratitudegarden/app/
 ├─ ui/
 │  ├─ GardenApp.kt                 # top-level nav: auth flow vs HomeScaffold + routes
 │  ├─ ViewModelExt.kt              # CreationExtras -> repositories
-│  ├─ components/                  # BottomNav, PillButton, PgTextField, ...
+│  ├─ components/                  # BottomNav, PillButton, PgTextField, EntryPhotos (picker, viewer), ...
 │  ├─ theme/                       # Color.kt, Theme.kt, Type.kt (Caprasimo / Nunito)
 │  ├─ sprites/                     # vector plant / icon drawing
 │  ├─ garden/ shop/ journal/ me/   # feature ViewModels + UI state
@@ -238,7 +241,7 @@ app/src/staging/java/com/gratitudegarden/app/   # staging flavor only — never 
    └─ screens/
       └─ AdminDashboardScreen.kt   # the admin dashboard UI
 
-supabase/migrations/                # source of truth for the schema (19 files)
+supabase/migrations/                # source of truth for the schema (20 files)
 db/                                 # older hand-written SQL notes (subset of the above)
 docs/                               # perf + test-optimization write-ups
 profiling/                          # before/after profiling evidence
@@ -295,6 +298,9 @@ Enum columns (values used by the admin UI come straight from these):
 | `garden_plants.health` | `plant_health` | `healthy`, `thirsty`, `wilting` |
 | `user_settings.theme` | *(text check)* | `light`, `dark`, `system` |
 
+One private Storage bucket, `entry-photos`, holds entry photos in a folder per user (see
+[Entry photos](#entry-photos)).
+
 Normal users' RLS policies are scoped to `auth.uid()` (each user only ever sees/edits
 their own rows). New accounts are provisioned by the `handle_new_user` trigger, and
 gameplay mutations go through `SECURITY DEFINER` RPCs (`submit_gratitude_entry`,
@@ -315,8 +321,9 @@ three kinds of write**, and every one of them is server-validated:
 
 | Path | How |
 | --- | --- |
-| The gameplay RPCs | `submit_gratitude_entry`, `edit_gratitude_entry`, `delete_gratitude_entry`, `purchase_item`, `place_plant`, `move_plant`, `water_plant`, `set_active_backdrop`, `buy_streak_freeze`, `delete_current_user`, `mark_notif_prompt_seen` — all `SECURITY DEFINER`, all deriving the user from `auth.uid()` |
+| The gameplay RPCs | `submit_gratitude_entry`, `edit_gratitude_entry`, `delete_gratitude_entry`, `set_entry_photo`, `purchase_item`, `place_plant`, `move_plant`, `water_plant`, `set_active_backdrop`, `buy_streak_freeze`, `delete_current_user`, `mark_notif_prompt_seen` — all `SECURITY DEFINER`, all deriving the user from `auth.uid()` |
 | `garden_plants` DELETE | `garden_plants_delete_own`, scoped through `gardens.user_id`. A DELETE is all-or-nothing, so there is no column subset to abuse |
+| Files in `entry-photos` | Upload, overwrite and delete, only inside the caller's own `{user_id}/` folder (`entry_photos_*_own`). A file does nothing until `set_entry_photo` attaches it, and that checks the path |
 | Nothing else | There are **no INSERT policies at all**, and after 0.5 there are **no self-serve UPDATE policies at all** |
 
 `anon` holds no table privileges whatsoever, and `authenticated` no longer holds
@@ -661,6 +668,46 @@ exists. `ReplyReceiver` waits up to three seconds for the session's token and fo
 delivery, which keeps it inside a receiver's ten; anything slower is left to
 `OutboxWorker`.
 
+### Entry photos
+
+Roadmap 1.4, first slice. An entry can carry one photo, chosen from the gallery (the system
+photo picker, so no storage permission) or taken with the camera (the camera app writes into
+a file the app shares through a `FileProvider`, so no camera permission either). It can be
+added, replaced or removed later from **Edit thought**. Text is still what makes an entry: a
+photo changes nothing about coins, XP, the cap or the streak.
+
+- **What's stored.** `PhotoPreparer` decodes the pick with `ImageDecoder`, which applies the
+  EXIF orientation, scales the long edge down to 1600 px and re-encodes a JPEG at quality 82:
+  a few hundred KB. Re-encoding drops every EXIF tag, **the location included**. Nothing
+  else about the original leaves the phone.
+- **Where.** The private bucket `entry-photos`, at `{user_id}/{entry_id}/{photo_id}.jpg`,
+  and the same relative path under `files/photos/` on the device. `photo_id` is new each
+  time a photo is set, so a replacement never takes the old one's name, and an upload sent
+  twice (with upsert) writes the same bytes to the same name. The bucket accepts JPEG only,
+  up to 3 MB.
+- **Offline, like the text.** A photo is copied into place with its entry and goes out as
+  its own outbox op (`PHOTO`) after the submit, so a slow upload never holds up the reward.
+  The op uploads the file, calls `set_entry_photo`, then removes anything else in the
+  entry's folder; every step is safe to repeat, so a replay cleans up after itself. Two
+  photo changes made while offline fold into one.
+- **Reading.** Photos from another device, or from before a reinstall, download the first
+  time they're shown (`downloadAuthenticated`) and are kept. Offline, a photo that was never
+  downloaded shows a placeholder. Files nothing refers to any more (replaced, removed, or
+  deleted with their entry, here or elsewhere) are pruned after each sync. The folder is
+  left out of backups and emptied on sign-out, like the database.
+- **Server checks** (`20260929120000_entry_photos`). `set_entry_photo` only takes a path in
+  the caller's own folder for that entry, and only once the file is really there; a check
+  constraint pins the shape. `delete_gratitude_entry` clears the path.
+
+**Deleting goes through the app.** SQL can't delete a storage object (Supabase's
+`protect_delete` trigger refuses, because the file would be left behind), so neither a
+cascade nor an RPC can. The app does it through the Storage API, and `own_photo_objects`
+tells it what to delete: the replaced photo after a change, the entry's folder after a
+delete, and every file the user has before their account is deleted.
+
+**Storage budget.** On the Free tier the project has 1 GB of storage, roughly 2–3k photos
+at this size. One more reason a real launch probably wants Pro.
+
 ### Account deletion
 
 Users can delete their own account, and deletion is *complete* — it removes the login and
@@ -673,8 +720,14 @@ wipes every associated row.
 - **Complete wipe:** deletion removes the `auth.users` row, and the existing
   `ON DELETE CASCADE` foreign keys erase everything owned by the account (profile,
   settings, stats, wallet, entries, garden + plants, inventory).
+- **Photos first.** Supabase refuses to delete a user who still owns storage objects, and
+  SQL can't delete them, so before calling `delete_current_user` the app lists the user's
+  files (`own_photo_objects`) and deletes them through the Storage API, 1000 at a time. If
+  that fails, nothing has been deleted and the user sees the error.
 - **Admin dashboard "Danger zone":** admins get a real *Delete entire account* action per
-  user (via `admin_delete_user`).
+  user (via `admin_delete_user`). **Known gap:** it fails for a user who has photos, since
+  an admin can't list or delete another user's files. Staging-only, so it doesn't block
+  release; the fix is an admin storage policy plus an admin variant of `own_photo_objects`.
 - **Backend (`db/account_deletion.sql`):** two `SECURITY DEFINER` RPCs —
   `delete_current_user()` (self) and `admin_delete_user(uuid)` (admin-gated by
   `is_current_user_admin()`). Both pin `search_path` and are executable only by
