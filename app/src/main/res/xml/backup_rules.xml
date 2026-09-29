@@ -5,6 +5,7 @@
    Kept out of backups:
    - The Room database (garden.db and its WAL/SHM files): one person's journal, and a copy
      of what the server already holds. After a restore the user signs in and it syncs down.
+   - Entry photos (files/photos/), for the same reasons; they download again as they're shown.
    - supabase-kt's stored session, which holds the refresh token. It lives in the default
      shared preferences, named after the application ID, so each flavor is listed.
 -->
@@ -13,6 +14,7 @@
     <exclude domain="database" path="garden.db-wal" />
     <exclude domain="database" path="garden.db-shm" />
     <exclude domain="database" path="garden.db-journal" />
+    <exclude domain="file" path="photos/" />
     <exclude domain="sharedpref" path="com.gratitudegarden.app_preferences.xml" />
     <exclude domain="sharedpref" path="com.gratitudegarden.app.staging_preferences.xml" />
 </full-backup-content>

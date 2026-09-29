@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "3f18e70e0f453b0f0cbcb90539d83e53",
+    "identityHash": "d27848a631a0d81205fce66b3e0587a6",
     "entities": [
       {
         "tableName": "profile",
@@ -393,7 +393,7 @@
       },
       {
         "tableName": "gratitude_entries",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `entryText` TEXT NOT NULL, `inputMethod` TEXT NOT NULL, `coinsAwarded` INTEGER, `xpAwarded` INTEGER, `entryDate` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `createdAtMicros` INTEGER NOT NULL, `deletedAt` TEXT, `syncState` TEXT NOT NULL, `syncError` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `userId` TEXT NOT NULL, `entryText` TEXT NOT NULL, `inputMethod` TEXT NOT NULL, `coinsAwarded` INTEGER, `xpAwarded` INTEGER, `entryDate` TEXT NOT NULL, `createdAt` TEXT NOT NULL, `createdAtMicros` INTEGER NOT NULL, `deletedAt` TEXT, `syncState` TEXT NOT NULL, `syncError` TEXT, `photoPath` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -462,6 +462,11 @@
             "fieldPath": "syncError",
             "columnName": "syncError",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "photoPath",
+            "columnName": "photoPath",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -525,7 +530,7 @@
       },
       {
         "tableName": "outbox",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `userId` TEXT NOT NULL, `type` TEXT NOT NULL, `entryId` TEXT NOT NULL, `text` TEXT, `inputMethod` TEXT, `timeZone` TEXT, `writtenAt` TEXT, `attempts` INTEGER NOT NULL, `lastError` TEXT)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `userId` TEXT NOT NULL, `type` TEXT NOT NULL, `entryId` TEXT NOT NULL, `text` TEXT, `inputMethod` TEXT, `timeZone` TEXT, `writtenAt` TEXT, `photoPath` TEXT, `attempts` INTEGER NOT NULL, `lastError` TEXT)",
         "fields": [
           {
             "fieldPath": "seq",
@@ -572,6 +577,11 @@
             "affinity": "TEXT"
           },
           {
+            "fieldPath": "photoPath",
+            "columnName": "photoPath",
+            "affinity": "TEXT"
+          },
+          {
             "fieldPath": "attempts",
             "columnName": "attempts",
             "affinity": "INTEGER",
@@ -613,7 +623,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3f18e70e0f453b0f0cbcb90539d83e53')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd27848a631a0d81205fce66b3e0587a6')"
     ]
   }
 }

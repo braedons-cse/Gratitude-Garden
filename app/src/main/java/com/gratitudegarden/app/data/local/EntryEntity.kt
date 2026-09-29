@@ -54,6 +54,12 @@ data class EntryEntity(
     val syncState: SyncState = SyncState.SYNCED,
     /** Why the server refused it, when [syncState] is [SyncState.FAILED]. */
     val syncError: String? = null,
+    /**
+     * The entry's photo, `{user}/{entry}/{photo}.jpg` ([com.gratitudegarden.app.data.photoPathFor]):
+     * its name in the bucket and, under the device's photo folder, where the local copy is.
+     * Null when there's none.
+     */
+    val photoPath: String? = null,
 )
 
 fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
@@ -67,12 +73,13 @@ fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
     createdAt = createdAt,
     createdAtMicros = epochMicros(createdAt),
     deletedAt = deletedAt,
+    photoPath = photoPath,
 )
 
 fun EntryEntity.toRow() =
     GratitudeEntry(
         id, entryText, inputMethod, coinsAwarded, xpAwarded, entryDate, createdAt, deletedAt,
-        syncState = syncState, syncError = syncError,
+        syncState = syncState, syncError = syncError, photoPath = photoPath,
     )
 
 /** Microseconds since the epoch for an ISO-8601 timestamp with an offset. */
@@ -118,8 +125,16 @@ interface EntryDao {
     @Query("UPDATE gratitude_entries SET entryText = :text, syncState = :state WHERE id = :id")
     suspend fun setText(id: String, text: String, state: SyncState)
 
-    @Query("UPDATE gratitude_entries SET deletedAt = :deletedAt, syncState = :state WHERE id = :id")
+    /** Deleted, and without its photo, as `delete_gratitude_entry` leaves it. */
+    @Query("UPDATE gratitude_entries SET deletedAt = :deletedAt, photoPath = NULL, syncState = :state WHERE id = :id")
     suspend fun markDeleted(id: String, deletedAt: String, state: SyncState)
+
+    @Query("UPDATE gratitude_entries SET photoPath = :path, syncState = :state WHERE id = :id")
+    suspend fun setPhoto(id: String, path: String?, state: SyncState)
+
+    /** Every photo an entry of the user's refers to; the files the device must keep. */
+    @Query("SELECT photoPath FROM gratitude_entries WHERE userId = :userId AND photoPath IS NOT NULL")
+    suspend fun photoPaths(userId: String): List<String>
 
     @Query("UPDATE gratitude_entries SET syncState = :state, syncError = :error WHERE id = :id")
     suspend fun setSyncState(id: String, state: SyncState, error: String? = null)

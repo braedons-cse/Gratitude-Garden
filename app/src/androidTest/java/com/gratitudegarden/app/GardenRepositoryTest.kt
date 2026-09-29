@@ -18,15 +18,20 @@ import io.github.jan.supabase.auth.user.UserSession
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.serializer.KotlinXSerializer
+import io.github.jan.supabase.storage.Storage
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -35,7 +40,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.Timeout
 import org.junit.runner.RunWith
+import java.io.File
 import java.time.LocalDate
+import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
@@ -53,6 +60,8 @@ class GardenRepositoryTest {
     private lateinit var db: GardenDatabase
     private lateinit var client: SupabaseClient
     private lateinit var repo: GardenRepository
+    private lateinit var photoDir: File
+    private lateinit var stagingDir: File
 
     @Before
     fun setUp() {
@@ -70,12 +79,19 @@ class GardenRepositoryTest {
                 sessionManager = MemorySessionManager()
             }
             install(Postgrest)
+            install(Storage)
         }
-        repo = GardenRepository(client, db, ConnectivityMonitor(context))
+        val scratch = File(context.cacheDir, "repo-test-${UUID.randomUUID()}")
+        photoDir = File(scratch, "photos")
+        stagingDir = File(scratch, "staging").apply { mkdirs() }
+        repo = GardenRepository(client, db, ConnectivityMonitor(context), photoDir)
     }
 
     @After
-    fun tearDown() = db.close()
+    fun tearDown() {
+        db.close()
+        photoDir.parentFile?.deleteRecursively()
+    }
 
     /** Sign in as the fake's user and let the first refresh finish; by default, forget its requests. */
     @OptIn(ExperimentalTime::class)
@@ -311,6 +327,253 @@ class GardenRepositoryTest {
         assertEquals(0, db.itemDao().observeCatalog().first().size)
     }
 
+    // ── Entry photos (roadmap 1.4) ─────────────────────────────────────
+
+    /** A photo as the sheet hands it over: a file in the staging folder. The bytes needn't be a real JPEG. */
+    private fun staged(content: String = "photo-${UUID.randomUUID()}"): File =
+        File(stagingDir, "${UUID.randomUUID()}.jpg").apply { writeText(content) }
+
+    private fun local(path: String) = File(photoDir, path)
+
+    /** Wait for the background delivery attempts to have tried [n] uploads and let go of the queue. */
+    private suspend fun settleOfflineUploads(n: Int) {
+        withTimeout(5_000) { while (fake.photoUploads().size < n) delay(10) }
+        repo.drainOutbox()
+    }
+
+    @Test
+    fun anEntryWithAPhotoIsSavedThenItsPhotoUploadedAndSet() = runBlocking {
+        signIn()
+        val photo = staged("sunset")
+
+        assertEquals(SubmitResult.Planted(5, xp = 10), repo.submitEntry("the sunset", voice = false, photo = photo))
+
+        val entry = journal().single()
+        val path = checkNotNull(entry.photoPath)
+        assertTrue(path, path.startsWith("${fake.userId}/${entry.id}/"))
+        assertEquals(SyncState.SYNCED, entry.syncState)
+        assertEquals(path, fake.entries.single().photoPath)
+        assertEquals(setOf(path), fake.storedPhotos.keys)
+        assertEquals("sunset", fake.storedPhotos[path]!!.decodeToString())
+        // The entry first, so a slow upload never holds up the reward; then the file, then the row.
+        val order = fake.requests.map {
+            when {
+                "rpc/submit_gratitude_entry" in it -> "submit"
+                it.startsWith("POST /storage/v1/object/") -> "upload"
+                "rpc/set_entry_photo" in it -> "set"
+                else -> null
+            }
+        }.filterNotNull()
+        assertEquals(listOf("submit", "upload", "set"), order)
+        assertFalse("the staged file was handed over", photo.exists())
+        assertEquals("sunset", local(path).readText())
+    }
+
+    @Test
+    fun aPhotoWrittenOfflineIsKeptAndGoesUpOnReconnect() = runBlocking {
+        signIn()
+        fake.offline = true
+
+        assertEquals(SubmitResult.Saved, repo.submitEntry("a quiet morning", voice = false, photo = staged("dawn")))
+
+        val path = checkNotNull(journal().single().photoPath)
+        assertEquals("dawn", local(path).readText())
+        assertTrue(fake.storedPhotos.isEmpty())
+
+        fake.offline = false
+        assertTrue(repo.drainOutbox())
+
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+        assertEquals(path, fake.entries.single().photoPath)
+        assertEquals("dawn", fake.storedPhotos[path]!!.decodeToString())
+    }
+
+    @Test
+    fun lostAnswersNeverPayTwiceNorLeaveAStrayFile() = runBlocking {
+        signIn()
+        fake.loseEachFirstAnswer = true
+
+        repo.submitEntry("worth keeping", voice = false, photo = staged())
+        for (attempt in 1..10) if (repo.drainOutbox() && repo.observeUnsyncedCount().first() == 0) break
+
+        val entry = journal().single()
+        assertEquals(SyncState.SYNCED, entry.syncState)
+        assertEquals(1, fake.paidSubmits)
+        assertEquals(setOf(entry.photoPath), fake.storedPhotos.keys)
+        assertEquals(entry.photoPath, fake.entries.single().photoPath)
+    }
+
+    @Test
+    fun replacingAPhotoTwiceOfflineSendsOnlyTheLastOne() = runBlocking {
+        signIn()
+        repo.submitEntry("the garden", voice = false, photo = staged("first"))
+        val id = journal().single().id
+        val first = checkNotNull(journal().single().photoPath)
+        fake.requests.clear()
+        fake.offline = true
+
+        repo.setEntryPhoto(id, staged("second"))
+        val second = checkNotNull(journal().single().photoPath)
+        // Each change starts a delivery, which fails offline. An op on the wire can't take a
+        // later change (the request has left), so let the attempt finish first.
+        settleOfflineUploads(1)
+        repo.setEntryPhoto(id, staged("third"))
+        val third = checkNotNull(journal().single().photoPath)
+        settleOfflineUploads(2)
+        assertEquals(SyncState.PENDING, journal().single().syncState)
+        fake.offline = false
+        fake.requests.clear()
+
+        assertTrue(repo.drainOutbox())
+
+        assertEquals(1, fake.photoUploads().size)
+        assertEquals(1, fake.rpcCalls("set_entry_photo").size)
+        assertEquals("the replaced photo is gone from the server", setOf(third), fake.storedPhotos.keys)
+        assertEquals(third, fake.entries.single().photoPath)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+        assertFalse("nothing refers to it any more", local(first).exists())
+        assertFalse(local(second).exists())
+        assertEquals("third", local(third).readText())
+    }
+
+    @Test
+    fun removingAPhotoClearsItEverywhere() = runBlocking {
+        signIn()
+        repo.submitEntry("a letter from home", voice = false, photo = staged())
+        val entry = journal().single()
+        val path = checkNotNull(entry.photoPath)
+
+        repo.setEntryPhoto(entry.id, null)
+        assertTrue(repo.drainOutbox())
+
+        assertNull(journal().single().photoPath)
+        assertNull(fake.entries.single().photoPath)
+        assertTrue(fake.storedPhotos.isEmpty())
+        assertFalse(local(path).exists())
+    }
+
+    @Test
+    fun deletingAnEntryDeletesItsPhoto() = runBlocking {
+        signIn()
+        repo.submitEntry("the old oak", voice = false, photo = staged())
+        val path = checkNotNull(journal().single().photoPath)
+
+        repo.deleteEntry(journal().single().id)
+        assertTrue(repo.drainOutbox())
+
+        assertTrue(fake.storedPhotos.isEmpty())
+        assertNotNull(fake.entries.single().deletedAt)
+        assertNull(fake.entries.single().photoPath)
+        assertFalse(local(path).exists())
+    }
+
+    @Test
+    fun deletingAQueuedEntryNeverUploadsItsPhoto() = runBlocking {
+        signIn()
+        fake.offline = true
+        repo.submitEntry("never mind", voice = false, photo = staged())
+        val path = checkNotNull(journal().single().photoPath)
+        repo.deleteEntry(journal().single().id)
+        fake.offline = false
+        fake.requests.clear()
+
+        assertTrue(repo.drainOutbox())
+
+        assertTrue(fake.requests.isEmpty())
+        assertTrue(fake.storedPhotos.isEmpty())
+        assertFalse(local(path).exists())
+    }
+
+    @Test
+    fun aPhotoFromAnotherDeviceIsFetchedOnceAndLetGoWhenReplaced() = runBlocking {
+        fake.addEntries(1)
+        val id = fake.entries.single().id
+        val first = "${fake.userId}/$id/p1.jpg"
+        fake.setPhotoElsewhere(id, first, byteArrayOf(7, 7, 7))
+        signIn()
+        assertEquals(first, journal().single().photoPath)
+        assertFalse("fetched only when it's shown", local(first).exists())
+
+        val file = checkNotNull(repo.photoFile(first))
+        assertArrayEquals(byteArrayOf(7, 7, 7), file.readBytes())
+        fake.requests.clear()
+        assertEquals(file, repo.photoFile(first))
+        assertTrue("the second look is local", fake.requests.isEmpty())
+
+        val second = "${fake.userId}/$id/p2.jpg"
+        fake.setPhotoElsewhere(id, second)
+        repo.refreshAll(force = true)
+
+        assertEquals(second, journal().single().photoPath)
+        assertFalse("the replaced photo's file is let go", local(first).exists())
+    }
+
+    @Test
+    fun anOfflinePhotoThatWasNeverFetchedIsNull() = runBlocking {
+        fake.addEntries(1)
+        val id = fake.entries.single().id
+        val path = "${fake.userId}/$id/p1.jpg"
+        fake.setPhotoElsewhere(id, path)
+        signIn()
+        fake.offline = true
+
+        assertNull(repo.photoFile(path))
+    }
+
+    @Test
+    fun aPathOutsideTheUsersFolderIsNeverFetched() = runBlocking {
+        signIn()
+
+        assertNull(repo.photoFile("../../databases/garden.db"))
+        assertNull(repo.photoFile("someone-else/e1/p1.jpg"))
+        assertTrue(fake.requests.isEmpty())
+    }
+
+    @Test
+    fun signingOutEmptiesThePhotoFolder() = runBlocking {
+        signIn()
+        repo.submitEntry("my own", voice = false, photo = staged())
+        assertTrue(photoDir.walk().any { it.isFile })
+
+        repo.signOut()
+
+        assertFalse(photoDir.exists())
+    }
+
+    @Test
+    fun aRefusedEntryIsSentAgainWithItsPhoto() = runBlocking {
+        signIn()
+        fake.refuseText = "nope"
+        repo.submitEntry("nope, not this", voice = false, photo = staged("kept"))
+        val entry = journal().single()
+        assertEquals(SyncState.FAILED, entry.syncState)
+        assertTrue("a refused entry keeps its photo", local(checkNotNull(entry.photoPath)).exists())
+        fake.refuseText = null
+
+        repo.retryEntry(entry.id)
+        assertTrue(repo.drainOutbox())
+
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+        assertEquals(entry.photoPath, fake.entries.single().photoPath)
+        assertEquals("kept", fake.storedPhotos[entry.photoPath]!!.decodeToString())
+    }
+
+    @Test
+    fun editingTextWhileAPhotoWaitsKeepsBoth() = runBlocking {
+        signIn()
+        repo.submitEntry("first words", voice = false)
+        val id = journal().single().id
+        fake.offline = true
+        repo.setEntryPhoto(id, staged())
+        repo.editEntry(id, "better words")
+        fake.offline = false
+
+        assertTrue(repo.drainOutbox())
+
+        assertEquals("better words", fake.entries.single().text)
+        assertNotNull(fake.entries.single().photoPath)
+    }
+
     // ── The outbox: journal writes that work offline ───────────────────
 
     private suspend fun journal() = repo.observeEntries(100).first()
@@ -444,7 +707,10 @@ class GardenRepositoryTest {
 
         assertEquals(2, fake.rpcCalls("submit_gratitude_entry").size)
         assertEquals(2, fake.rpcCalls("edit_gratitude_entry").size)
-        assertEquals(2, fake.rpcCalls("delete_gratitude_entry").size)
+        // A delete is two calls, the delete and the listing of the entry's photos. Losing the
+        // listing's first answer sends the whole op again, the delete included.
+        assertEquals(3, fake.rpcCalls("delete_gratitude_entry").size)
+        assertEquals(2, fake.rpcCalls("own_photo_objects").size)
         assertEquals(1, fake.paidSubmits)
         assertEquals(3, fake.entries.size)
         assertEquals("edited offline", fake.entries.first { it.id == "e00000" }.text)

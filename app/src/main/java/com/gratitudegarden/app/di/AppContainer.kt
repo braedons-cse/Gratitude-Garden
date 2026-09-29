@@ -4,6 +4,7 @@ import android.content.Context
 import com.gratitudegarden.app.BuildConfig
 import com.gratitudegarden.app.data.ConnectivityMonitor
 import com.gratitudegarden.app.data.GardenRepository
+import com.gratitudegarden.app.data.PhotoPreparer
 import com.gratitudegarden.app.data.WorkManagerOutboxScheduler
 import com.gratitudegarden.app.data.local.GardenDatabase
 import com.gratitudegarden.app.widget.WidgetSync
@@ -12,11 +13,13 @@ import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.serializer.KotlinXSerializer
+import io.github.jan.supabase.storage.Storage
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.Json
+import java.io.File
 
 /**
- * Manual service locator. Holds the singleton [SupabaseClient] (Auth + Postgrest),
+ * Manual service locator. Holds the singleton [SupabaseClient] (Auth, Postgrest, Storage),
  * the local [GardenDatabase], the [ConnectivityMonitor], the [GardenRepository], which
  * hands its journal outbox to WorkManager, and the home-screen widget's [WidgetSync].
  */
@@ -36,6 +39,7 @@ class AppContainer(private val context: Context) {
         })
         install(Auth)        // session persisted automatically (SettingsSessionManager)
         install(Postgrest)
+        install(Storage)     // entry photos
     }
 
     // Lazy so the file isn't opened until a repository first needs it.
@@ -44,9 +48,15 @@ class AppContainer(private val context: Context) {
     val connectivity: ConnectivityMonitor by lazy { ConnectivityMonitor(context) }
 
     val gardenRepository: GardenRepository by lazy {
-        GardenRepository(supabase, database, connectivity, WorkManagerOutboxScheduler(context))
+        GardenRepository(supabase, database, connectivity, photoDir(context), WorkManagerOutboxScheduler(context))
     }
+
+    /** Turns a picked or captured image into the photo that is stored. */
+    val photoPreparer: PhotoPreparer by lazy { PhotoPreparer(context) }
 
     // Lazy, and only touched once a widget exists (see WidgetSync).
     val widgetSync: WidgetSync by lazy { WidgetSync(context, gardenRepository) }
 }
+
+/** Entry photos on the device. Must match the `photos/` exclusions in the backup rules. */
+fun photoDir(context: Context) = File(context.filesDir, "photos")

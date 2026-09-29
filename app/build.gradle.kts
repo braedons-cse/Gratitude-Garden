@@ -124,10 +124,14 @@ dependencies {
     // The home-screen widget: the garden, the streak, and a way in to write
     implementation(libs.androidx.glance.appwidget)
 
-    // Supabase (auth + postgrest) over Ktor, using kotlinx-serialization
+    // Entry photos: drawn from the files the repository keeps on the device
+    implementation(libs.coil.compose)
+
+    // Supabase (auth + postgrest + storage) over Ktor, using kotlinx-serialization
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.auth)
     implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.storage)
     implementation(libs.ktor.client.okhttp)
 
     testImplementation(libs.junit)

@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
@@ -35,6 +36,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  * and the `or=(updated_at.gt.X,and(updated_at.eq.X,id.gt.Y))` cursor. The journal RPCs
  * behave like the real ones where the outbox depends on it: a submit is recognised by its
  * id and paid once, and a repeated delete succeeds.
+ *
+ * Storage is the entry-photos bucket and nothing more: upload (with upsert), delete by name,
+ * and the authenticated download, with set_entry_photo refusing a file that isn't there.
  */
 class FakeSupabase {
     val userId = "u1"
@@ -83,6 +87,9 @@ class FakeSupabase {
     @Volatile var activeBackdropId: String? = "i3"
     val entries = CopyOnWriteArrayList<Entry>()
 
+    /** The entry-photos bucket: object name to bytes. */
+    val storedPhotos: MutableMap<String, ByteArray> = java.util.concurrent.ConcurrentHashMap()
+
     val today: String = LocalDate.now().toString()
 
     /** The streak's last day in `user_stats`: another device's entry shows up here first. */
@@ -97,6 +104,7 @@ class FakeSupabase {
         var deletedAt: String? = null,
         val coins: Int = 5,
         val xp: Int = XP_FIRST_ENTRY,
+        var photoPath: String? = null,
     )
 
     /** Add [count] entries dated today; ids and timestamps ascend. */
@@ -113,6 +121,19 @@ class FakeSupabase {
     fun deleteElsewhere(id: String) {
         entries.first { it.id == id }.apply { deletedAt = nextStamp(); updatedAt = deletedAt!! }
     }
+
+    /** Server-side photo change, as from another device: the file is stored, the old one removed. */
+    fun setPhotoElsewhere(id: String, path: String?, bytes: ByteArray = byteArrayOf(1, 2, 3)) {
+        entries.first { it.id == id }.apply {
+            photoPath?.let { storedPhotos.remove(it) }
+            path?.let { storedPhotos[it] = bytes }
+            photoPath = path
+            updatedAt = nextStamp()
+        }
+    }
+
+    /** Uploads of photos, as `METHOD /path` requests. */
+    fun photoUploads() = requests.filter { it.contains("/storage/v1/object/$BUCKET/") && !it.startsWith("GET") }
 
     /** Server-side edit, as from another device: new text, fresh `updated_at`. */
     fun edit(id: String, text: String) {
@@ -145,6 +166,47 @@ class FakeSupabase {
 
         when {
             path == "/auth/v1/logout" -> respond("", HttpStatusCode.NoContent)
+            path.startsWith("/storage/v1/object/authenticated/$BUCKET/") -> {
+                val bytes = storedPhotos[path.removePrefix("/storage/v1/object/authenticated/$BUCKET/")]
+                if (bytes == null) respond("""{"statusCode":"404","error":"not_found","message":"Object not found"}""", HttpStatusCode.NotFound, headersOf(HttpHeaders.ContentType, "application/json"))
+                else respond(bytes, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "image/jpeg"))
+            }
+            path.startsWith("/storage/v1/object/$BUCKET/") -> {
+                val name = path.removePrefix("/storage/v1/object/$BUCKET/")
+                val exists = name in storedPhotos
+                if (exists && request.headers["x-upsert"] != "true") {
+                    reply("""{"statusCode":"409","error":"Duplicate","message":"The resource already exists"}""", HttpStatusCode.Conflict)
+                } else {
+                    storedPhotos[name] = request.body.toByteArray()
+                    reply("""{"Key":"$BUCKET/$name","Id":"obj-${name.hashCode()}"}""")
+                }
+            }
+            path == "/storage/v1/object/$BUCKET" && request.method.value == "DELETE" -> {
+                val names = Json.parseToJsonElement(request.body.toByteArray().decodeToString())
+                    .jsonObject["prefixes"]!!.jsonArray.map { it.jsonPrimitive.content }
+                names.forEach { storedPhotos.remove(it) }
+                reply(names.joinToString(",", "[", "]") { """{"name":"$it"}""" })
+            }
+            path == "/rest/v1/rpc/set_entry_photo" -> {
+                val photo = arg("p_photo_path")
+                val entry = entries.firstOrNull { it.id == arg("p_entry_id") && it.deletedAt == null }
+                when {
+                    photo != null && !photo.startsWith("$userId/${arg("p_entry_id")}/") ->
+                        reply(error("photo path not allowed"), HttpStatusCode.BadRequest)
+                    photo != null && photo !in storedPhotos -> reply(error("photo not uploaded"), HttpStatusCode.BadRequest)
+                    entry == null -> reply(error("entry not found"), HttpStatusCode.BadRequest)
+                    else -> {
+                        entry.photoPath = photo
+                        entry.updatedAt = nextStamp()
+                        reply(json(entry))
+                    }
+                }
+            }
+            path == "/rest/v1/rpc/own_photo_objects" -> {
+                val prefix = "$userId/" + (arg("p_entry_id")?.let { "$it/" } ?: "")
+                // PostgREST's shape for a setof-scalar function; the repository reads either.
+                reply(storedPhotos.keys.filter { it.startsWith(prefix) }.sorted().joinToString(",", "[", "]") { "\"$it\"" })
+            }
             path == "/rest/v1/rpc/submit_gratitude_entry" -> {
                 val id = arg("p_id")!!
                 val text = arg("p_entry_text")!!
@@ -194,6 +256,7 @@ class FakeSupabase {
                         val stamp = nextStamp()
                         entry.deletedAt = stamp
                         entry.updatedAt = stamp
+                        entry.photoPath = null
                     }
                     reply("", HttpStatusCode.NoContent)
                 }
@@ -274,7 +337,7 @@ class FakeSupabase {
     private fun json(e: Entry) =
         """{"id":"${e.id}","entry_text":"${e.text}","input_method":"text","coins_awarded":${e.coins},"xp_awarded":${e.xp},""" +
             """"entry_date":"${e.entryDate}","created_at":"${e.createdAt}","updated_at":"${e.updatedAt}",""" +
-            """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"}}"""
+            """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"},"photo_path":${e.photoPath?.let { "\"$it\"" } ?: "null"}}"""
 
     private fun refused(text: String) = refuseText?.let { it in text } == true
 
@@ -287,6 +350,8 @@ class FakeSupabase {
     private fun nextStamp() = stamp(clock++)
 
     companion object {
+        const val BUCKET = "entry-photos"
+
         private val base = Instant.parse("2026-09-24T00:00:00Z")
         private val format = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSSxxx").withZone(ZoneOffset.UTC)
 

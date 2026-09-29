@@ -20,6 +20,8 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.storage.storage
+import io.ktor.http.ContentType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -51,8 +53,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.File
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
@@ -78,6 +85,8 @@ data class GratitudeEntry(
     @SerialName("entry_date") val entryDate: String,
     @SerialName("created_at") val createdAt: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
+    /** The photo's name in the bucket, `{user}/{entry}/{photo}.jpg`; null when there's none. */
+    @SerialName("photo_path") val photoPath: String? = null,
     /** Read only by the entry sync, as its cursor; not stored locally. */
     @SerialName("updated_at") val updatedAt: String? = null,
     /** Local only: whether the server has this version yet. */
@@ -245,6 +254,11 @@ class GardenRepository(
     private val client: SupabaseClient,
     private val db: GardenDatabase,
     private val connectivity: ConnectivityMonitor,
+    /**
+     * Where entry photos are kept on the device, each at its [GratitudeEntry.photoPath].
+     * App-private, left out of backups like the database, and emptied with it.
+     */
+    private val photoDir: File,
     private val outboxScheduler: OutboxScheduler = OutboxScheduler.None,
 ) {
 
@@ -342,6 +356,9 @@ class GardenRepository(
             this.email = email
             this.password = password
         }
+        // Photos first: Supabase refuses to delete a user who still owns stored files, and
+        // SQL can't delete them, so the cascade can't either.
+        removeServerPhotos(entryId = null)
         client.postgrest.rpc("delete_current_user")
         // The session's user no longer exists; drop it locally regardless of the
         // server round-trip so sessionStatus flips to NotAuthenticated.
@@ -358,7 +375,10 @@ class GardenRepository(
         outboxScheduler.cancel()
         scope.coroutineContext.job.children.forEach { it.cancelAndJoin() }
         lastFullRefreshAt = null
-        withContext(Dispatchers.IO) { db.clearAllTables() }
+        withContext(Dispatchers.IO) {
+            db.clearAllTables()
+            photoDir.deleteRecursively()
+        }
     }
 
     /**
@@ -671,6 +691,8 @@ class GardenRepository(
                 if (batch.size < SYNC_BATCH) break
             }
         }
+        // A photo replaced or removed on another device leaves its file behind here.
+        prunePhotos(uid)
     }
 
     /**
@@ -704,8 +726,12 @@ class GardenRepository(
      *
      * The day's cap is checked here too, against the mirrored `daily_entry_cap`, so an
      * entry past it is refused now rather than written offline and refused at sync.
+     *
+     * A [photo] (a file from [PhotoPreparer]) is copied into the photo folder and goes out
+     * as its own step after the entry, so a slow upload never holds up the reward. The
+     * staged file is deleted once the entry is saved, and kept if it isn't.
      */
-    suspend fun submitEntry(text: String, voice: Boolean, wait: Duration = SUBMIT_WAIT): SubmitResult {
+    suspend fun submitEntry(text: String, voice: Boolean, photo: File? = null, wait: Duration = SUBMIT_WAIT): SubmitResult {
         val uid = currentUid() ?: throw IllegalStateException("Not signed in.")
         val id = UUID.randomUUID().toString()
         val now = Instant.now()
@@ -713,47 +739,63 @@ class GardenRepository(
         val day = entryDay(now, zone).toString()
         val inputMethod = if (voice) "voice_to_text" else "text"
         val writtenAt = now.toString()
+        val photoPath = photo?.let { photoPathFor(uid, id) }
         localLock.withLock {
-            db.withTransaction {
-                val cap = SettingsEntity.clampCap(db.accountDao().getSettings(uid)?.dailyEntryCap)
-                // Same wording as the server's error, so the screens map it the same way.
-                if (db.entryDao().countOn(uid, day) >= cap) throw IllegalStateException("daily entry cap ($cap) reached")
-                db.entryDao().upsert(
-                    EntryEntity(
-                        id = id,
-                        userId = uid,
-                        entryText = text,
-                        inputMethod = inputMethod,
-                        coinsAwarded = null,
-                        xpAwarded = null,
-                        entryDate = day,
-                        createdAt = writtenAt,
-                        createdAtMicros = epochMicros(writtenAt),
-                        deletedAt = null,
-                        syncState = SyncState.PENDING,
-                    ),
-                )
-                db.outboxDao().insert(
-                    OutboxOp(
-                        userId = uid,
-                        type = OutboxType.SUBMIT,
-                        entryId = id,
-                        text = text,
-                        inputMethod = inputMethod,
-                        timeZone = zone.id,
-                        writtenAt = writtenAt,
-                    ),
-                )
+            photoPath?.let { placePhoto(photo, it) }
+            try {
+                db.withTransaction {
+                    val cap = SettingsEntity.clampCap(db.accountDao().getSettings(uid)?.dailyEntryCap)
+                    // Same wording as the server's error, so the screens map it the same way.
+                    if (db.entryDao().countOn(uid, day) >= cap) throw IllegalStateException("daily entry cap ($cap) reached")
+                    db.entryDao().upsert(
+                        EntryEntity(
+                            id = id,
+                            userId = uid,
+                            entryText = text,
+                            inputMethod = inputMethod,
+                            coinsAwarded = null,
+                            xpAwarded = null,
+                            entryDate = day,
+                            createdAt = writtenAt,
+                            createdAtMicros = epochMicros(writtenAt),
+                            deletedAt = null,
+                            syncState = SyncState.PENDING,
+                            photoPath = photoPath,
+                        ),
+                    )
+                    db.outboxDao().insert(
+                        OutboxOp(
+                            userId = uid,
+                            type = OutboxType.SUBMIT,
+                            entryId = id,
+                            text = text,
+                            inputMethod = inputMethod,
+                            timeZone = zone.id,
+                            writtenAt = writtenAt,
+                        ),
+                    )
+                    if (photoPath != null) {
+                        db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.PHOTO, entryId = id, photoPath = photoPath))
+                    }
+                }
+            } catch (e: Exception) {
+                photoPath?.let { localPhoto(it).delete() }
+                throw e
             }
         }
+        photo?.delete()
         outboxScheduler.schedule()
         // Delivery runs in [scope], so running out of patience here only stops the waiting.
         withTimeoutOrNull(wait) { runCatching { drainOutbox() } }
         currentCoroutineContext().ensureActive()
         val entry = db.entryDao().get(id)
-        return when (entry?.syncState) {
-            SyncState.SYNCED -> SubmitResult.Planted(entry.coinsAwarded, entry.xpAwarded)
-            SyncState.FAILED -> SubmitResult.Refused(entry.syncError.orEmpty())
+        return when {
+            entry == null -> SubmitResult.Saved
+            entry.syncState == SyncState.FAILED -> SubmitResult.Refused(entry.syncError.orEmpty())
+            // With its photo still on the way the entry is pending, but the server has it and
+            // has paid, which is what the toast is about.
+            entry.syncState == SyncState.SYNCED || entry.coinsAwarded != null ->
+                SubmitResult.Planted(entry.coinsAwarded, entry.xpAwarded)
             else -> SubmitResult.Saved
         }
     }
@@ -771,8 +813,12 @@ class GardenRepository(
                     db.entryDao().setText(id, newText, SyncState.FAILED)
                     return@withTransaction true
                 }
-                val waiting = db.outboxDao().opsFor(id).lastOrNull()?.takeIf { it.seq != inFlight }
-                if (waiting != null && waiting.type != OutboxType.DELETE) {
+                // Only a text op can take the new text; a photo op queued after it doesn't
+                // change what the server should end up with.
+                val waiting = db.outboxDao().opsFor(id)
+                    .lastOrNull { it.type == OutboxType.SUBMIT || it.type == OutboxType.EDIT }
+                    ?.takeIf { it.seq != inFlight }
+                if (waiting != null) {
                     db.outboxDao().setText(waiting.seq, newText)
                 } else {
                     db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = newText))
@@ -782,6 +828,50 @@ class GardenRepository(
             }
         }
         if (refused) retryEntry(id) else deliverSoon()
+    }
+
+    /**
+     * Give an entry a new photo, [photo] (a file from [PhotoPreparer]), or take its photo
+     * away (null). Like [editEntry], a photo change still waiting in the queue is rewritten
+     * rather than followed by another, and a refused entry is sent again with it.
+     *
+     * The old photo's file stays until nothing refers to it: an upload of it may be under
+     * way. [prunePhotos] removes it after.
+     */
+    suspend fun setEntryPhoto(id: String, photo: File?) {
+        val uid = currentUid() ?: return
+        val path = photo?.let { photoPathFor(uid, id) }
+        val refused = localLock.withLock {
+            path?.let { placePhoto(photo, it) }
+            try {
+                db.withTransaction {
+                    val entry = db.entryDao().get(id) ?: return@withTransaction null
+                    if (entry.syncState == SyncState.FAILED) {
+                        db.entryDao().setPhoto(id, path, SyncState.FAILED)
+                        return@withTransaction true
+                    }
+                    val waiting = db.outboxDao().opsFor(id)
+                        .lastOrNull { it.type == OutboxType.PHOTO }
+                        ?.takeIf { it.seq != inFlight }
+                    if (waiting != null) {
+                        db.outboxDao().setPhotoPath(waiting.seq, path)
+                    } else {
+                        db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.PHOTO, entryId = id, photoPath = path))
+                    }
+                    db.entryDao().setPhoto(id, path, SyncState.PENDING)
+                    false
+                }
+            } catch (e: Exception) {
+                path?.let { localPhoto(it).delete() }
+                throw e
+            }
+        }
+        photo?.delete()
+        when (refused) {
+            true -> retryEntry(id)
+            false -> deliverSoon()
+            null -> path?.let { localLock.withLock { localPhoto(it).delete() } } // the entry is gone
+        }
     }
 
     /**
@@ -797,8 +887,10 @@ class GardenRepository(
                     db.outboxDao().deleteFor(id)
                     db.entryDao().hardDelete(id)
                 } else {
-                    // Queued edits of it are moot now.
-                    waiting.filter { it.type == OutboxType.EDIT }.forEach { db.outboxDao().delete(it.seq) }
+                    // Queued edits of it are moot now, photo changes too: the delete removes
+                    // whatever photo it has on the server.
+                    waiting.filter { it.type == OutboxType.EDIT || it.type == OutboxType.PHOTO }
+                        .forEach { db.outboxDao().delete(it.seq) }
                     db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.DELETE, entryId = id))
                     db.entryDao().markDeleted(id, Instant.now().toString(), SyncState.PENDING)
                 }
@@ -841,10 +933,11 @@ class GardenRepository(
     }
 
     /**
-     * Send a refused entry again, with its text as it is now. It goes as a submit followed by
-     * an edit: if the server never received it, the submit creates it (under its original id
-     * and write time); if it did, the submit is recognised and changes nothing, and the edit
-     * applies the text. Either way no second reward, and no need to know which.
+     * Send a refused entry again, with its text and photo as they are now. It goes as a
+     * submit, an edit and a photo change: if the server never received it, the submit creates
+     * it (under its original id and write time); if it did, the submit is recognised and
+     * changes nothing, and the edit and the photo change apply what's here now. Either way no
+     * second reward, and no need to know which.
      *
      * If the day's cap refused it, it will be refused again until its day has passed the
      * 36-hour window, after which the server dates it now.
@@ -866,6 +959,8 @@ class GardenRepository(
                     ),
                 )
                 db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = entry.entryText))
+                // Sent even without a photo: the server's copy may have one that was removed here.
+                db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.PHOTO, entryId = id, photoPath = entry.photoPath))
                 db.entryDao().setSyncState(id, SyncState.PENDING)
             }
         }
@@ -904,8 +999,24 @@ class GardenRepository(
      */
     suspend fun saveAsNewEntry(id: String): SubmitResult? {
         val entry = db.entryDao().get(id)?.takeIf { it.syncState == SyncState.FAILED } ?: return null
-        discardEntry(id)
-        return submitEntry(entry.entryText, voice = entry.inputMethod == "voice_to_text")
+        // Copied aside first: discarding lets go of the original's file.
+        val photo = withContext(Dispatchers.IO) {
+            entry.photoPath?.let(::localPhoto)?.takeIf { it.exists() }?.let { original ->
+                File(tempDir(), "${UUID.randomUUID()}.jpg").also { original.copyTo(it) }
+            }
+        }
+        try {
+            discardEntry(id)
+        } catch (e: Exception) {
+            photo?.delete()
+            throw e
+        }
+        return try {
+            submitEntry(entry.entryText, voice = entry.inputMethod == "voice_to_text", photo = photo)
+        } catch (e: Exception) {
+            photo?.delete()
+            throw e
+        }
     }
 
     /** How many entries have changes the server hasn't confirmed; sign-out warns about them. */
@@ -972,7 +1083,7 @@ class GardenRepository(
                 inFlight = null
             }
         }
-        if (delivered) afterWrite(::syncEntries, ::refreshAccount)
+        if (delivered) afterWrite(::syncEntries, ::refreshAccount) else prunePhotos(uid)
         return true
     }
 
@@ -1000,10 +1111,131 @@ class GardenRepository(
             )
             OutboxType.DELETE -> {
                 client.postgrest.rpc("delete_gratitude_entry", buildJsonObject { put("p_entry_id", op.entryId) })
+                // After the row lets go of it, so no copy of the row names a missing file.
+                removeServerPhotos(op.entryId)
                 return null
+            }
+            OutboxType.PHOTO -> {
+                val path = op.photoPath
+                if (path != null) {
+                    val file = localPhoto(path)
+                    if (!file.exists()) throw MissingPhotoException(path)
+                    val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                    client.storage.from(PHOTO_BUCKET).upload(path, bytes) {
+                        upsert = true // a resend writes the same bytes to the same name
+                        contentType = ContentType.Image.JPEG
+                    }
+                }
+                val reply = client.postgrest.rpc(
+                    "set_entry_photo",
+                    buildJsonObject {
+                        put("p_entry_id", op.entryId)
+                        put("p_photo_path", path)
+                    },
+                )
+                // The photo it replaced, and any upload a lost answer left behind.
+                removeServerPhotos(op.entryId, keep = path)
+                reply
             }
         }
         return runCatching { result.decodeAs<GratitudeEntry>() }.getOrNull()
+    }
+
+    /**
+     * Delete the user's stored photos: one entry's ([entryId]), or all of them (null), except
+     * [keep]. The names come from the server, not from Room, so files no local row knows
+     * about (an upload whose answer was lost, another device's) go too.
+     */
+    private suspend fun removeServerPhotos(entryId: String?, keep: String? = null) {
+        val names = client.postgrest.rpc(
+            "own_photo_objects",
+            buildJsonObject { entryId?.let { put("p_entry_id", it) } },
+        ).decodeAs<JsonArray>().mapNotNull { it.firstString() }.filter { it != keep }
+        // The Storage API takes at most 1000 names per request.
+        names.chunked(1000).forEach { client.storage.from(PHOTO_BUCKET).delete(it) }
+    }
+
+    /** A `setof text` row, whichever way PostgREST shapes it: `"name"` or `{"own_photo_objects": "name"}`. */
+    private fun JsonElement.firstString(): String? = when (this) {
+        is JsonPrimitive -> takeIf { it.isString }?.content
+        is JsonObject -> (values.firstOrNull() as? JsonPrimitive)?.takeIf { it.isString }?.content
+        else -> null
+    }
+
+    // ── Photo files ──────────────────────────────────────────────────
+    // Placed, pruned and downloaded under [localLock], so a prune can't delete a file whose
+    // entry is about to be written, nor one a download is putting in place.
+
+    /** The device's copy of the photo at [path]; it may not exist. */
+    private fun localPhoto(path: String) = File(photoDir, path)
+
+    /** For downloads and copies in progress. Inside [photoDir], so sign-out empties it too. */
+    private fun tempDir() = File(photoDir, ".tmp").apply { mkdirs() }
+
+    /** Copy a staged photo to where [path] says it lives. The caller holds [localLock]. */
+    private suspend fun placePhoto(staged: File, path: String) {
+        withContext(Dispatchers.IO) { staged.copyTo(localPhoto(path), overwrite = true) }
+    }
+
+    /**
+     * The photo at [path] as a file on the device, fetched from the server the first time
+     * it's asked for (a photo from another device, or from before a reinstall). Null when it
+     * isn't here and can't be fetched now, such as offline.
+     */
+    suspend fun photoFile(path: String): File? {
+        if (!isPhotoPath(path)) return null
+        val local = localPhoto(path)
+        if (local.exists()) return local
+        val uid = currentUid() ?: return null
+        if (!hasToken() || !path.startsWith("$uid/")) return null
+        return try {
+            val bytes = client.storage.from(PHOTO_BUCKET).downloadAuthenticated(path)
+            withContext(Dispatchers.IO) {
+                val part = File(tempDir(), "${UUID.randomUUID()}.part").apply { writeBytes(bytes) }
+                localLock.withLock {
+                    // Only if something still refers to it: the entry may have changed, or
+                    // the user signed out, while the download ran.
+                    if (path in db.entryDao().photoPaths(uid)) {
+                        local.parentFile?.mkdirs()
+                        if (!part.renameTo(local)) part.copyTo(local, overwrite = true)
+                    }
+                    part.delete()
+                }
+            }
+            local.takeIf { it.exists() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(LogTags.APP_LOGIC, "Couldn't fetch a photo", e)
+            null
+        }
+    }
+
+    /**
+     * Delete the user's photo files that nothing refers to any more: replaced, removed, or
+     * deleted with their entry, here or on another device. A file a queued upload still needs
+     * is kept.
+     */
+    private suspend fun prunePhotos(uid: String) {
+        try {
+            withContext(Dispatchers.IO) {
+                localLock.withLock {
+                    val userDir = File(photoDir, uid)
+                    if (!userDir.exists()) return@withLock
+                    val keep = (db.entryDao().photoPaths(uid) + db.outboxDao().photoPaths(uid)).toSet()
+                    userDir.walkBottomUp().forEach { f ->
+                        when {
+                            f.isFile && f.relativeTo(photoDir).invariantSeparatorsPath !in keep -> f.delete()
+                            f.isDirectory && f != userDir && f.list().isNullOrEmpty() -> f.delete()
+                        }
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(LogTags.APP_LOGIC, "Couldn't tidy the photo folder", e)
+        }
     }
 
     private suspend fun recordDelivered(op: OutboxOp, uid: String, row: GratitudeEntry?) {
@@ -1132,15 +1364,15 @@ class GardenRepository(
         /** Rows per request in the entry sync. PostgREST on Supabase caps a response at 1000. */
         const val SYNC_BATCH = 500
 
-        /**
-         * How long a submit waits to be delivered before reporting it saved instead. It is
-         * delivered all the same; this only bounds the "Planting…" spinner.
-         */
         /** What the home-screen widget reads: the streak, the day's count and cap, the garden. */
         private val WIDGET_TABLES = arrayOf(
             "user_stats", "gratitude_entries", "user_settings", "garden", "garden_plants", "items",
         )
 
+        /**
+         * How long a submit waits to be delivered before reporting it saved instead. It is
+         * delivered all the same; this only bounds the "Planting…" spinner.
+         */
         val SUBMIT_WAIT = 8.seconds
 
         /**
@@ -1149,7 +1381,11 @@ class GardenRepository(
          */
         fun isTransient(e: Throwable): Boolean = when (e) {
             is RestException -> e.statusCode in setOf(401, 403, 408, 429) || e.statusCode >= 500
+            is MissingPhotoException -> false
             else -> true // no connection, timeouts, and anything unrecognised
         }
     }
 }
+
+/** A queued photo whose file is no longer on the device. Sending it again won't help. */
+private class MissingPhotoException(path: String) : IllegalStateException("photo file missing: $path")
