@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -79,6 +81,16 @@ class GardenWidget : GlanceAppWidget() {
         }
     }
 
+    /** The picker's preview on Android 15+ (see [publishPreviews]): a garden a few weeks in. */
+    override suspend fun providePreview(context: Context, widgetCategory: Int) {
+        // A preview is composed at no particular size; this is a typical 4x2 cell.
+        provideContent {
+            CompositionLocalProvider(LocalSize provides DpSize(350.dp, 170.dp)) {
+                WidgetContent(PreviewState)
+            }
+        }
+    }
+
     companion object {
         /** Narrower than this, there's no room for the garden beside the words. */
         val MIN_WIDE_WIDTH = 180.dp
@@ -87,6 +99,23 @@ class GardenWidget : GlanceAppWidget() {
         val MIN_TALL_HEIGHT = 220.dp
     }
 }
+
+private val PreviewState = WidgetState.Ready(
+    streakDays = 12,
+    streakHeld = false,
+    thoughtsLeft = 7,
+    backdropSlug = "backdrop.cherry_grove",
+    gridRows = 6,
+    gridCols = 5,
+    plants = listOf(
+        WidgetPlant(1, 1, "seed.sunset_tulip", 3),
+        WidgetPlant(3, 1, "seed.field_daisy", 2),
+        WidgetPlant(0, 2, "seed.big_sunflower", 3),
+        WidgetPlant(2, 3, "seed.sleepy_lavender", 3),
+        WidgetPlant(4, 3, "seed.sunset_tulip", 1),
+        WidgetPlant(1, 4, "seed.field_daisy", 3),
+    ),
+)
 
 private val Padding = 12.dp
 

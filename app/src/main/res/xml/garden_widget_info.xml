@@ -12,5 +12,5 @@
     android:targetCellHeight="2"
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
-    android:previewImage="@mipmap/ic_launcher"
+    android:previewImage="@drawable/widget_preview"
     android:widgetCategory="home_screen" />

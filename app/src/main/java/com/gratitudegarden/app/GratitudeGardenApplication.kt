@@ -4,6 +4,7 @@ import android.app.Application
 import com.gratitudegarden.app.di.AppContainer
 import com.gratitudegarden.app.notifications.ReminderNotifications
 import com.gratitudegarden.app.widget.WidgetSync
+import com.gratitudegarden.app.widget.publishPreviews
 
 /**
  * Process-wide owner of app dependencies. [container] is built once and read by
@@ -21,5 +22,6 @@ class GratitudeGardenApplication : Application() {
         ReminderNotifications.ensureChannel(this)
         // Keep a widget on the home screen in step with whatever this process writes.
         if (WidgetSync.hasWidgets(this)) container.widgetSync.start()
+        publishPreviews(this)
     }
 }
