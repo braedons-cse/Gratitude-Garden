@@ -55,7 +55,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -122,6 +124,8 @@ import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 import com.gratitudegarden.app.ui.theme.pressScale
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 
 private val SoilTop = Color(0xFFA48560)
 private val SoilBottom = Color(0xFF8B6F47)
@@ -139,6 +143,8 @@ fun GardenRoute(
     onPlacementDone: () -> Unit = {},
     onDragActive: (Boolean) -> Unit = {},
     onOpenShop: () -> Unit = {},
+    openEntrySheet: Boolean = false,
+    onEntrySheetOpened: () -> Unit = {},
 ) {
     LogComposableLifecycle(LogTags.GARDEN_SCREEN)
     val vm: GardenViewModel = viewModel(factory = GardenViewModel.Factory)
@@ -162,6 +168,8 @@ fun GardenRoute(
         onNeedsConnection = vm::onNeedsConnection,
         onPlacementDone = onPlacementDone,
         onDragActive = onDragActive,
+        openEntrySheet = openEntrySheet,
+        onEntrySheetOpened = onEntrySheetOpened,
     )
 }
 
@@ -181,6 +189,9 @@ fun GardenScreen(
     onNeedsConnection: () -> Unit = {},
     onPlacementDone: () -> Unit = {},
     onDragActive: (Boolean) -> Unit = {},
+    /** A Write link (widget, notification) asked for the entry sheet. */
+    openEntrySheet: Boolean = false,
+    onEntrySheetOpened: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showSheet by remember { mutableStateOf(false) }
@@ -195,9 +206,18 @@ fun GardenScreen(
         }
     }
 
-    // Close the sheet once a submit finishes (submitting flips true → false).
-    LaunchedEffect(ui.submitting) {
-        if (!ui.submitting) showSheet = false
+    // Close the sheet once a submit finishes (submitting flips true → false). Only on the
+    // flip: a sheet opened on arrival (a Write link) must survive the first composition.
+    val submitting by rememberUpdatedState(ui.submitting)
+    LaunchedEffect(Unit) {
+        snapshotFlow { submitting }.drop(1).filter { !it }.collect { showSheet = false }
+    }
+
+    LaunchedEffect(openEntrySheet) {
+        if (openEntrySheet) {
+            showSheet = true
+            onEntrySheetOpened()
+        }
     }
 
     val title = if (ui.displayName.isNotBlank()) "${ui.displayName}'s Garden" else ui.gardenName

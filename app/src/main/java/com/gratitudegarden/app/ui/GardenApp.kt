@@ -17,6 +17,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,8 +49,12 @@ import com.gratitudegarden.app.util.LogTags
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
+/**
+ * [writeRequested] is a Write link (widget, notification) waiting for the entry sheet. It
+ * stays pending through sign-in; [onWriteHandled] clears it once the sheet is up.
+ */
 @Composable
-fun GratitudeGardenApp() {
+fun GratitudeGardenApp(writeRequested: Boolean = false, onWriteHandled: () -> Unit = {}) {
     GratitudeGardenTheme {
         val authVm: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
         val session by authVm.session.collectAsStateWithLifecycle()
@@ -66,7 +71,11 @@ fun GratitudeGardenApp() {
                     // Scope the tab/admin ViewModels to this session so they're evicted on
                     // sign-out — otherwise the next user inherits this user's cached state.
                     SessionScope(s.userId) {
-                        HomeScaffold(onSignOut = authVm::signOut)
+                        HomeScaffold(
+                            onSignOut = authVm::signOut,
+                            writeRequested = writeRequested,
+                            onWriteHandled = onWriteHandled,
+                        )
                     }
                 }
             }
@@ -108,7 +117,11 @@ private fun AuthNav(authVm: AuthViewModel) {
 }
 
 @Composable
-private fun HomeScaffold(onSignOut: () -> Unit) {
+private fun HomeScaffold(
+    onSignOut: () -> Unit,
+    writeRequested: Boolean,
+    onWriteHandled: () -> Unit,
+) {
     val tabs = HomeNavItems
     val pagerState = rememberPagerState(pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
@@ -119,6 +132,15 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
     // While a plant is being dragged in the Garden, freeze the pager so the swipe
     // gesture doesn't fight the drag.
     var gardenDragging by remember { mutableStateOf(false) }
+
+    // A Write link lands on the Garden tab, with nothing over it. Jump, don't animate: the
+    // pages in between would all compose on the way past.
+    LaunchedEffect(writeRequested) {
+        if (writeRequested) {
+            showAdmin = false
+            pagerState.scrollToPage(0)
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
@@ -157,6 +179,8 @@ private fun HomeScaffold(onSignOut: () -> Unit) {
                             placingItemId = pendingPlacement,
                             onPlacementDone = { pendingPlacement = null },
                             onDragActive = { gardenDragging = it },
+                            openEntrySheet = writeRequested,
+                            onEntrySheetOpened = onWriteHandled,
                             onOpenShop = {
                                 val shop = tabs.indexOfFirst { it.route == "shop" }
                                 scope.launch { pagerState.animateScrollToPage(shop) }
