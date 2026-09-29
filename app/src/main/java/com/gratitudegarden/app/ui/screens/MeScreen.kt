@@ -321,7 +321,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             text = {
                 Text(
                     "This permanently deletes your account and erases everything — your garden, " +
-                        "journal entries, coins, and stats. This can't be undone.",
+                        "journal entries and their photos, coins, and stats. This can't be undone.",
                     fontFamily = Nunito,
                     color = GgInkSoft,
                 )

@@ -1,5 +1,6 @@
 package com.gratitudegarden.app.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -50,7 +52,12 @@ import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.local.SyncState
 import com.gratitudegarden.app.util.LogComposableLifecycle
 import com.gratitudegarden.app.util.LogTags
+import com.gratitudegarden.app.ui.components.EntryPhoto
+import com.gratitudegarden.app.ui.components.PhotoPickerRow
+import com.gratitudegarden.app.ui.components.PhotoViewer
 import com.gratitudegarden.app.ui.components.PillButton
+import com.gratitudegarden.app.ui.components.rememberPhotoDraft
+import com.gratitudegarden.app.ui.journal.PhotoChange
 import com.gratitudegarden.app.ui.journal.JournalUiState
 import com.gratitudegarden.app.ui.journal.JournalViewModel
 import com.gratitudegarden.app.ui.sprites.CoinIcon
@@ -71,6 +78,7 @@ import com.gratitudegarden.app.ui.theme.GgInkSoft
 import com.gratitudegarden.app.ui.theme.GgMoss
 import com.gratitudegarden.app.ui.theme.GgPrimary
 import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
+import java.io.File
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -91,6 +99,8 @@ fun JournalRoute() {
         onErrorShown = vm::consumeError,
         onRefresh = vm::refresh,
         onLoadMore = vm::loadMore,
+        loadPhoto = vm::photoFile,
+        preparePhoto = vm::preparePhoto,
     )
 }
 
@@ -98,7 +108,7 @@ fun JournalRoute() {
 @Composable
 fun JournalScreen(
     ui: JournalUiState,
-    onEdit: (String, String) -> Unit,
+    onEdit: (id: String, text: String, photo: PhotoChange) -> Unit,
     onDelete: (String) -> Unit,
     onRetry: (String) -> Unit = {},
     onDiscard: (String) -> Unit = {},
@@ -106,6 +116,8 @@ fun JournalScreen(
     onErrorShown: () -> Unit = {},
     onRefresh: () -> Unit = {},
     onLoadMore: () -> Unit = {},
+    loadPhoto: suspend (String) -> File? = { null },
+    preparePhoto: suspend (Uri) -> File = { error("no photo preparer") },
 ) {
     val context = LocalContext.current
     LaunchedEffect(ui.error) {
@@ -118,6 +130,7 @@ fun JournalScreen(
     var actionEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var editEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
+    var viewing by remember { mutableStateOf<File?>(null) }
 
     // Ask the ViewModel for more of the history as the user nears the end of the list.
     // Only visible rows are ever composed (LazyColumn), and the ViewModel holds only
@@ -199,7 +212,12 @@ fun JournalScreen(
                 )
             }
             items(section.entries, key = { it.id }) { entry ->
-                EntryCard(entry = entry, onClick = { actionEntry = entry })
+                EntryCard(
+                    entry = entry,
+                    onClick = { actionEntry = entry },
+                    loadPhoto = loadPhoto,
+                    onOpenPhoto = { viewing = it },
+                )
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -234,7 +252,10 @@ fun JournalScreen(
     editEntry?.let { entry ->
         EditDialog(
             initial = entry.entryText,
-            onSave = { text -> onEdit(entry.id, text); editEntry = null },
+            photoPath = entry.photoPath,
+            loadPhoto = loadPhoto,
+            preparePhoto = preparePhoto,
+            onSave = { text, photo -> onEdit(entry.id, text, photo); editEntry = null },
             onDismiss = { editEntry = null },
         )
     }
@@ -245,6 +266,8 @@ fun JournalScreen(
             onDismiss = { deleteEntry = null },
         )
     }
+
+    viewing?.let { PhotoViewer(it, onDismiss = { viewing = null }) }
 }
 
 @Composable
@@ -304,7 +327,12 @@ private fun WeekStrip(entryDates: Set<String>, frozenDates: Set<String>) {
 }
 
 @Composable
-private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
+private fun EntryCard(
+    entry: GratitudeEntry,
+    onClick: () -> Unit,
+    loadPhoto: suspend (String) -> File?,
+    onOpenPhoto: (File) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -329,6 +357,7 @@ private fun EntryCard(entry: GratitudeEntry, onClick: () -> Unit) {
                 color = GgInk,
                 lineHeight = 20.sp,
             )
+            entry.photoPath?.let { path -> EntryPhoto(path = path, load = loadPhoto, onOpen = onOpenPhoto) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = timeOf(entry.createdAt),
@@ -472,8 +501,20 @@ private fun DialogRow(label: String, onClick: () -> Unit, danger: Boolean = fals
 }
 
 @Composable
-private fun EditDialog(initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+private fun EditDialog(
+    initial: String,
+    photoPath: String?,
+    loadPhoto: suspend (String) -> File?,
+    preparePhoto: suspend (Uri) -> File,
+    onSave: (String, PhotoChange) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var text by remember { mutableStateOf(initial) }
+    val draft = rememberPhotoDraft(preparePhoto)
+    // The entry's own photo, until it's replaced (the draft has one) or taken off.
+    var removed by remember { mutableStateOf(false) }
+    val current by produceState<File?>(null, photoPath) { value = photoPath?.let { loadPhoto(it) } }
+    val keepsOwn = !removed && photoPath != null
     Dialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(GgBgSage).padding(20.dp),
@@ -491,8 +532,34 @@ private fun EditDialog(initial: String, onSave: (String) -> Unit, onDismiss: () 
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            Spacer(Modifier.height(12.dp))
+            PhotoPickerRow(
+                draft = draft,
+                hasPhoto = draft.staged != null || keepsOwn,
+                // Offline and never downloaded, the entry's own photo has no file yet; the
+                // row shows a placeholder, and it can still be replaced or removed.
+                shown = draft.staged ?: current?.takeIf { keepsOwn },
+                onRemove = {
+                    draft.drop()
+                    removed = true
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(16.dp))
-            PillButton(text = "Save", onClick = { onSave(text) }, enabled = text.isNotBlank(), modifier = Modifier.fillMaxWidth())
+            PillButton(
+                text = "Save",
+                onClick = {
+                    val staged = draft.handOver()
+                    val change = when {
+                        staged != null -> PhotoChange.Replace(staged)
+                        removed && photoPath != null -> PhotoChange.Remove
+                        else -> PhotoChange.Keep
+                    }
+                    onSave(text, change)
+                },
+                enabled = text.isNotBlank() && !draft.preparing,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(8.dp))
             Text(
                 "Cancel",

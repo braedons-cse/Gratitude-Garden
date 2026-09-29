@@ -1,13 +1,16 @@
 package com.gratitudegarden.app.ui.journal
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.GardenRepository
+import com.gratitudegarden.app.data.PhotoPreparer
 import com.gratitudegarden.app.data.StreakStatus
 import com.gratitudegarden.app.data.streakNow
+import com.gratitudegarden.app.ui.gardenApp
 import com.gratitudegarden.app.ui.isOffline
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
@@ -20,9 +23,19 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 import java.time.LocalDate
 
 data class JournalSection(val label: String, val entries: List<GratitudeEntry>)
+
+/** What an edit does to the entry's photo. */
+sealed interface PhotoChange {
+    data object Keep : PhotoChange
+    data object Remove : PhotoChange
+
+    /** A staged file from [JournalViewModel.preparePhoto], handed over with the edit. */
+    data class Replace(val file: File) : PhotoChange
+}
 
 data class JournalUiState(
     val loading: Boolean = true,
@@ -40,7 +53,10 @@ data class JournalUiState(
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
+class JournalViewModel(
+    private val repo: GardenRepository,
+    private val photos: PhotoPreparer,
+) : ViewModel() {
 
     private val _ui = MutableStateFlow(JournalUiState())
     val ui: StateFlow<JournalUiState> = _ui.asStateFlow()
@@ -128,13 +144,35 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
         date
     }
 
-    fun edit(id: String, newText: String) {
-        if (newText.isBlank()) return
+    /**
+     * Save an edit: the text, and the photo if it changed. One after the other in one
+     * coroutine, so they reach the queue in order.
+     */
+    fun edit(id: String, newText: String, photo: PhotoChange = PhotoChange.Keep) {
+        if (newText.isBlank()) {
+            (photo as? PhotoChange.Replace)?.file?.delete()
+            return
+        }
         viewModelScope.launch {
-            try { repo.editEntry(id, newText.trim()) }
-            catch (e: Exception) { _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) } }
+            try {
+                when (photo) {
+                    PhotoChange.Keep -> {}
+                    PhotoChange.Remove -> repo.setEntryPhoto(id, null)
+                    is PhotoChange.Replace -> repo.setEntryPhoto(id, photo.file)
+                }
+                repo.editEntry(id, newText.trim())
+            } catch (e: Exception) {
+                (photo as? PhotoChange.Replace)?.file?.delete()
+                _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) }
+            }
         }
     }
+
+    /** Turn a picked or captured image into the photo that would be saved with the entry. */
+    suspend fun preparePhoto(uri: Uri): File = photos.prepare(uri)
+
+    /** An entry's photo as a file, fetched the first time if it isn't on the device yet. */
+    suspend fun photoFile(path: String): File? = repo.photoFile(path)
 
     fun delete(id: String) {
         viewModelScope.launch {
@@ -180,6 +218,8 @@ class JournalViewModel(private val repo: GardenRepository) : ViewModel() {
     companion object {
         private const val PAGE_SIZE = 20
 
-        val Factory = viewModelFactory { initializer { JournalViewModel(repo()) } }
+        val Factory = viewModelFactory {
+            initializer { JournalViewModel(repo(), gardenApp().container.photoPreparer) }
+        }
     }
 }
