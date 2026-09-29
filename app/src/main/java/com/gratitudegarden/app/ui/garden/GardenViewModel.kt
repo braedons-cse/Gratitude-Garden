@@ -11,7 +11,6 @@ import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.data.LevelPreferences
 import com.gratitudegarden.app.data.StreakStatus
-import com.gratitudegarden.app.data.SubmitResult
 import com.gratitudegarden.app.data.streakNow
 import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
@@ -157,7 +156,7 @@ class GardenViewModel(
                 repo.refreshAll()
             } catch (e: Exception) {
                 if (!isOffline(e)) {
-                    _ui.update { it.copy(message = e.toUserMessage("Couldn't load your garden", ::friendly)) }
+                    _ui.update { it.copy(message = e.toUserMessage("Couldn't load your garden", ::gardenErrorMessage)) }
                 }
             }
         }
@@ -170,22 +169,11 @@ class GardenViewModel(
         _ui.update { it.copy(submitting = true) }
         viewModelScope.launch {
             try {
-                val message = when (val result = repo.submitEntry(text.trim(), voice)) {
-                    // The server decides the reward, so the toast reports what was
-                    // actually awarded rather than promising a fixed number.
-                    is SubmitResult.Planted -> {
-                        val earned = listOfNotNull(result.coins?.let { "+$it coins" }, result.xp?.let { "+$it XP" })
-                        val note = if (earned.isEmpty()) "" else earned.joinToString(" · ", postfix = " · ")
-                        if (freezing) "${note}a streak freeze kept your streak going ❄️"
-                        else "${note}a kind thought planted 🌱"
-                    }
-                    SubmitResult.Saved -> "Saved in your journal. It'll be planted as soon as it syncs."
-                    is SubmitResult.Refused -> friendly(result.reason) ?: "The garden couldn't take that thought."
-                }
+                val message = submitMessage(repo.submitEntry(text.trim(), voice), freezing)
                 _ui.update { it.copy(submitting = false, message = message) }
                 maybeOfferReminders()
             } catch (e: Exception) {
-                _ui.update { it.copy(submitting = false, message = e.toUserMessage("Couldn't save your thought", ::friendly)) }
+                _ui.update { it.copy(submitting = false, message = e.toSubmitMessage()) }
             }
         }
     }
@@ -243,7 +231,7 @@ class GardenViewModel(
                 repo.waterPlant(plantId)
                 _ui.update { it.copy(watering = false, message = "Watered 🌱 · -10 coins") }
             } catch (e: Exception) {
-                _ui.update { it.copy(watering = false, message = e.toUserMessage("Couldn't water your plant", ::friendly)) }
+                _ui.update { it.copy(watering = false, message = e.toUserMessage("Couldn't water your plant", ::gardenErrorMessage)) }
             }
         }
     }
@@ -257,7 +245,7 @@ class GardenViewModel(
                 repo.placePlant(itemId, x, y)
                 _ui.update { it.copy(placing = false, message = "Planted 🌿") }
             } catch (e: Exception) {
-                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
+                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::gardenErrorMessage)) }
             }
         }
     }
@@ -271,7 +259,7 @@ class GardenViewModel(
                 repo.movePlant(plantId, x, y)
                 _ui.update { it.copy(placing = false) }
             } catch (e: Exception) {
-                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
+                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::gardenErrorMessage)) }
             }
         }
     }
@@ -285,20 +273,9 @@ class GardenViewModel(
                 repo.digUpPlant(plantId)
                 _ui.update { it.copy(placing = false, message = "Dug up 🪴") }
             } catch (e: Exception) {
-                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::friendly)) }
+                _ui.update { it.copy(placing = false, message = e.toUserMessage("Couldn't do that. Please try again.", ::gardenErrorMessage)) }
             }
         }
-    }
-
-    /** Server errors raised on purpose by the garden RPCs; null means "use the fallback". */
-    private fun friendly(m: String): String? = when {
-        "occupied" in m -> "That spot's already taken — try another."
-        "out of bounds" in m -> "That's outside the garden."
-        "do not own" in m -> "You don't own that seed yet."
-        "daily entry cap" in m -> "That's all your thoughts for today. Come back tomorrow."
-        "insufficient coins" in m -> "Not enough coins yet — plant more kind thoughts."
-        "entry text required" in m -> "Write a few words first."
-        else -> null
     }
 
     fun consumeMessage() {
