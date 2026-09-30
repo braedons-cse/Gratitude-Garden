@@ -169,8 +169,11 @@ class GardenViewModel(
     /** Turn a picked or captured image into the photo that would be saved with the entry. */
     suspend fun preparePhoto(uri: Uri): File = photos.prepare(uri)
 
-    /** [photo], if any, is a staged file from [preparePhoto], now this call's to dispose of. */
-    fun submit(text: String, voice: Boolean, photo: File? = null) {
+    /**
+     * [mood] is 1–5 or null for none. [photo], if any, is a staged file from [preparePhoto],
+     * now this call's to dispose of.
+     */
+    fun submit(text: String, voice: Boolean, mood: Int? = null, photo: File? = null) {
         if (text.isBlank() || _ui.value.submitting) {
             photo?.delete()
             return
@@ -180,7 +183,7 @@ class GardenViewModel(
         _ui.update { it.copy(submitting = true) }
         viewModelScope.launch {
             try {
-                val message = submitMessage(repo.submitEntry(text.trim(), voice, photo), freezing)
+                val message = submitMessage(repo.submitEntry(text.trim(), voice, mood, photo), freezing)
                 _ui.update { it.copy(submitting = false, message = message) }
                 maybeOfferReminders()
             } catch (e: Exception) {

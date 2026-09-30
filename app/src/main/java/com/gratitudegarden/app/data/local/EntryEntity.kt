@@ -60,6 +60,8 @@ data class EntryEntity(
      * Null when there's none.
      */
     val photoPath: String? = null,
+    /** 1–5, rough to great ([com.gratitudegarden.app.model.Mood]); null when none was given. */
+    val mood: Int? = null,
 )
 
 fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
@@ -74,12 +76,13 @@ fun GratitudeEntry.toEntity(userId: String) = EntryEntity(
     createdAtMicros = epochMicros(createdAt),
     deletedAt = deletedAt,
     photoPath = photoPath,
+    mood = mood,
 )
 
 fun EntryEntity.toRow() =
     GratitudeEntry(
         id, entryText, inputMethod, coinsAwarded, xpAwarded, entryDate, createdAt, deletedAt,
-        syncState = syncState, syncError = syncError, photoPath = photoPath,
+        syncState = syncState, syncError = syncError, photoPath = photoPath, mood = mood,
     )
 
 /** Microseconds since the epoch for an ISO-8601 timestamp with an offset. */
@@ -122,8 +125,9 @@ interface EntryDao {
     @Query("SELECT id FROM gratitude_entries WHERE userId = :userId AND syncState = 'FAILED'")
     suspend fun refusedIds(userId: String): List<String>
 
-    @Query("UPDATE gratitude_entries SET entryText = :text, syncState = :state WHERE id = :id")
-    suspend fun setText(id: String, text: String, state: SyncState)
+    /** What an edit changes: the text and the mood, together. */
+    @Query("UPDATE gratitude_entries SET entryText = :text, mood = :mood, syncState = :state WHERE id = :id")
+    suspend fun setContent(id: String, text: String, mood: Int?, state: SyncState)
 
     /** Deleted, and without its photo, as `delete_gratitude_entry` leaves it. */
     @Query("UPDATE gratitude_entries SET deletedAt = :deletedAt, photoPath = NULL, syncState = :state WHERE id = :id")

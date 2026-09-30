@@ -47,6 +47,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -92,6 +93,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gratitudegarden.app.ui.components.MoodPicker
 import com.gratitudegarden.app.ui.components.PhotoPickerRow
 import com.gratitudegarden.app.ui.components.PillButton
 import com.gratitudegarden.app.ui.components.rememberPhotoDraft
@@ -156,7 +158,7 @@ fun GardenRoute(
     if (ui.loading) return
     GardenScreen(
         ui = ui,
-        onSubmit = { text, voice, photo -> vm.submit(text, voice, photo) },
+        onSubmit = { text, voice, mood, photo -> vm.submit(text, voice, mood, photo) },
         preparePhoto = vm::preparePhoto,
         onWater = vm::water,
         onMessageShown = vm::consumeMessage,
@@ -180,7 +182,7 @@ fun GardenRoute(
 @Composable
 fun GardenScreen(
     ui: GardenUiState,
-    onSubmit: (text: String, voice: Boolean, photo: File?) -> Unit,
+    onSubmit: (text: String, voice: Boolean, mood: Int?, photo: File?) -> Unit,
     preparePhoto: suspend (Uri) -> File = { error("no photo preparer") },
     onWater: (String) -> Unit,
     onMessageShown: () -> Unit,
@@ -952,18 +954,22 @@ private fun MicButton(progress: Float, onClick: () -> Unit) {
     }
 }
 
-// ── New entry sheet (voice + text + photo) ───────────────────────
+// ── New entry sheet (voice + text + mood + photo) ────────────────
 // `internal` (not `private`) so the androidTest source set can drive it in isolation.
 @Composable
 internal fun NewEntrySheet(
     submitting: Boolean,
     onDismiss: () -> Unit,
-    /** [photo] is handed over: from then on it's the receiver's to save or delete. */
-    onSubmit: (text: String, voice: Boolean, photo: File?) -> Unit,
+    /**
+     * [mood] is 1–5, or null when none was picked. [photo] is handed over: from then on it's
+     * the receiver's to save or delete.
+     */
+    onSubmit: (text: String, voice: Boolean, mood: Int?, photo: File?) -> Unit,
     preparePhoto: suspend (Uri) -> File,
 ) {
     val context = LocalContext.current
     var text by remember { mutableStateOf("") }
+    var mood by remember { mutableStateOf<Int?>(null) }
     val photo = rememberPhotoDraft(preparePhoto)
     var isVoice by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
@@ -1051,6 +1057,8 @@ internal fun NewEntrySheet(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
                 .background(GgBgSage)
+                // Scrolls when the keyboard leaves too little room for all of it.
+                .verticalScroll(rememberScrollState())
                 .padding(22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -1117,7 +1125,15 @@ internal fun NewEntrySheet(
                 )
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
+            MoodPicker(
+                selected = mood,
+                onSelect = { mood = it },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !submitting,
+            )
+
+            Spacer(Modifier.height(14.dp))
             PhotoPickerRow(
                 draft = photo,
                 hasPhoto = photo.staged != null,
@@ -1131,8 +1147,8 @@ internal fun NewEntrySheet(
 
             PillButton(
                 text = if (submitting) "Planting…" else "Plant it",
-                onClick = { onSubmit(text, isVoice, photo.handOver()) },
-                // Text is still what makes an entry; a photo only goes with one.
+                onClick = { onSubmit(text, isVoice, mood, photo.handOver()) },
+                // Text is still what makes an entry; a mood or a photo only goes with one.
                 enabled = text.isNotBlank() && !submitting && !photo.preparing,
                 modifier = Modifier.fillMaxWidth(),
                 testTag = "plant_it_button",

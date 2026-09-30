@@ -87,6 +87,8 @@ data class GratitudeEntry(
     @SerialName("deleted_at") val deletedAt: String? = null,
     /** The photo's name in the bucket, `{user}/{entry}/{photo}.jpg`; null when there's none. */
     @SerialName("photo_path") val photoPath: String? = null,
+    /** 1–5, rough to great ([com.gratitudegarden.app.model.Mood]); null when none was given. */
+    val mood: Int? = null,
     /** Read only by the entry sync, as its cursor; not stored locally. */
     @SerialName("updated_at") val updatedAt: String? = null,
     /** Local only: whether the server has this version yet. */
@@ -730,11 +732,18 @@ class GardenRepository(
      * The day's cap is checked here too, against the mirrored `daily_entry_cap`, so an
      * entry past it is refused now rather than written offline and refused at sync.
      *
-     * A [photo] (a file from [PhotoPreparer]) is copied into the photo folder and goes out
-     * as its own step after the entry, so a slow upload never holds up the reward. The
-     * staged file is deleted once the entry is saved, and kept if it isn't.
+     * A [mood] (1–5, [com.gratitudegarden.app.model.Mood]) goes with the text; it earns
+     * nothing. A [photo] (a file from [PhotoPreparer]) is copied into the photo folder and
+     * goes out as its own step after the entry, so a slow upload never holds up the reward.
+     * The staged file is deleted once the entry is saved, and kept if it isn't.
      */
-    suspend fun submitEntry(text: String, voice: Boolean, photo: File? = null, wait: Duration = SUBMIT_WAIT): SubmitResult {
+    suspend fun submitEntry(
+        text: String,
+        voice: Boolean,
+        mood: Int? = null,
+        photo: File? = null,
+        wait: Duration = SUBMIT_WAIT,
+    ): SubmitResult {
         val uid = currentUid() ?: throw IllegalStateException("Not signed in.")
         val id = UUID.randomUUID().toString()
         val now = Instant.now()
@@ -764,6 +773,7 @@ class GardenRepository(
                             deletedAt = null,
                             syncState = SyncState.PENDING,
                             photoPath = photoPath,
+                            mood = mood,
                         ),
                     )
                     db.outboxDao().insert(
@@ -775,6 +785,7 @@ class GardenRepository(
                             inputMethod = inputMethod,
                             timeZone = zone.id,
                             writtenAt = writtenAt,
+                            mood = mood,
                         ),
                     )
                     if (photoPath != null) {
@@ -804,29 +815,30 @@ class GardenRepository(
     }
 
     /**
-     * Change an entry's text. A change still waiting in the queue is rewritten rather than
-     * followed by another, so the server sees one request with the final text. Editing an
-     * entry the server refused sends it again with the new text ([retryEntry]).
+     * Change an entry's text and mood: both, every time, so [mood] is what it should be now
+     * (null for none), not a change to it. A change still waiting in the queue is rewritten
+     * rather than followed by another, so the server sees one request with the final words
+     * and mood. Editing an entry the server refused sends it again with them ([retryEntry]).
      */
-    suspend fun editEntry(id: String, newText: String) {
+    suspend fun editEntry(id: String, newText: String, mood: Int?) {
         val uid = currentUid() ?: return
         val refused = localLock.withLock {
             db.withTransaction {
                 if (db.entryDao().get(id)?.syncState == SyncState.FAILED) {
-                    db.entryDao().setText(id, newText, SyncState.FAILED)
+                    db.entryDao().setContent(id, newText, mood, SyncState.FAILED)
                     return@withTransaction true
                 }
-                // Only a text op can take the new text; a photo op queued after it doesn't
-                // change what the server should end up with.
+                // Only a text op can take the new text and mood; a photo op queued after it
+                // doesn't change what the server should end up with.
                 val waiting = db.outboxDao().opsFor(id)
                     .lastOrNull { it.type == OutboxType.SUBMIT || it.type == OutboxType.EDIT }
                     ?.takeIf { it.seq != inFlight }
                 if (waiting != null) {
-                    db.outboxDao().setText(waiting.seq, newText)
+                    db.outboxDao().setContent(waiting.seq, newText, mood)
                 } else {
-                    db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = newText))
+                    db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = newText, mood = mood))
                 }
-                db.entryDao().setText(id, newText, SyncState.PENDING)
+                db.entryDao().setContent(id, newText, mood, SyncState.PENDING)
                 false
             }
         }
@@ -941,7 +953,7 @@ class GardenRepository(
     }
 
     /**
-     * Send a refused entry again, with its text and photo as they are now. It goes as a
+     * Send a refused entry again, with its text, mood and photo as they are now. It goes as a
      * submit, an edit and a photo change: if the server never received it, the submit creates
      * it (under its original id and write time); if it did, the submit is recognised and
      * changes nothing, and the edit and the photo change apply what's here now. Either way no
@@ -964,9 +976,12 @@ class GardenRepository(
                         inputMethod = entry.inputMethod,
                         timeZone = ZoneId.systemDefault().id,
                         writtenAt = Instant.from(OffsetDateTime.parse(entry.createdAt)).toString(),
+                        mood = entry.mood,
                     ),
                 )
-                db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = entry.entryText))
+                db.outboxDao().insert(
+                    OutboxOp(userId = uid, type = OutboxType.EDIT, entryId = id, text = entry.entryText, mood = entry.mood),
+                )
                 // Sent even without a photo: the server's copy may have one that was removed here.
                 db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.PHOTO, entryId = id, photoPath = entry.photoPath))
                 db.entryDao().setSyncState(id, SyncState.PENDING)
@@ -1020,7 +1035,7 @@ class GardenRepository(
             throw e
         }
         return try {
-            submitEntry(entry.entryText, voice = entry.inputMethod == "voice_to_text", photo = photo)
+            submitEntry(entry.entryText, voice = entry.inputMethod == "voice_to_text", mood = entry.mood, photo = photo)
         } catch (e: Exception) {
             photo?.delete()
             throw e
@@ -1108,6 +1123,7 @@ class GardenRepository(
                     // The day is the entry's local date where and when it was written.
                     put("p_time_zone", op.timeZone)
                     put("p_written_at", op.writtenAt)
+                    put("p_mood", op.mood)
                 },
             )
             OutboxType.EDIT -> client.postgrest.rpc(
@@ -1115,6 +1131,8 @@ class GardenRepository(
                 buildJsonObject {
                     put("p_entry_id", op.entryId)
                     put("p_new_text", op.text)
+                    // Always sent: null clears it.
+                    put("p_mood", op.mood)
                 },
             )
             OutboxType.DELETE -> {

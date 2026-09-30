@@ -13,7 +13,7 @@ enum class OutboxType { SUBMIT, EDIT, DELETE, PHOTO }
 /**
  * A journal change made on the device and not yet confirmed by the server, replayed in
  * [seq] order. Every op is safe to send twice: the server recognises a submit by its
- * client-generated id, an edit sets the same text again, and a delete of a deleted entry
+ * client-generated id, an edit sets the same text and mood again, and a delete of a deleted entry
  * succeeds. A photo is uploaded under a name of its own with upsert, set again to the same
  * name, and whatever else is in the entry's folder removed, so a second run finds nothing
  * left to change.
@@ -35,6 +35,8 @@ data class OutboxOp(
     val writtenAt: String? = null,
     /** For [OutboxType.PHOTO]: the photo to set, uploaded first; null removes the entry's photo. */
     val photoPath: String? = null,
+    /** The mood, 1–5 or null, for [OutboxType.SUBMIT] and [OutboxType.EDIT], which sends it along with [text]. */
+    val mood: Int? = null,
     val attempts: Int = 0,
     val lastError: String? = null,
 )
@@ -61,8 +63,8 @@ interface OutboxDao {
     @Insert
     suspend fun insert(op: OutboxOp): Long
 
-    @Query("UPDATE outbox SET text = :text WHERE seq = :seq")
-    suspend fun setText(seq: Long, text: String)
+    @Query("UPDATE outbox SET text = :text, mood = :mood WHERE seq = :seq")
+    suspend fun setContent(seq: Long, text: String, mood: Int?)
 
     @Query("UPDATE outbox SET photoPath = :path WHERE seq = :seq")
     suspend fun setPhotoPath(seq: Long, path: String?)

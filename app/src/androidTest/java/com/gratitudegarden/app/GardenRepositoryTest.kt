@@ -566,7 +566,7 @@ class GardenRepositoryTest {
         fake.setPhotoElsewhere(id, path)
         signIn()
         fake.refuseText = "nope"
-        repo.editEntry(id, "nope, not this")
+        repo.editEntry(id, "nope, not this", mood = null)
         repo.drainOutbox()
         assertEquals(SyncState.FAILED, journal().single().syncState)
         assertFalse("never shown here, so never downloaded", local(path).exists())
@@ -626,7 +626,7 @@ class GardenRepositoryTest {
         fake.setPhotoElsewhere(id, "${fake.userId}/$id/p1.jpg", byteArrayOf(9, 9, 9))
         signIn()
         fake.refuseText = "nope"
-        repo.editEntry(id, "nope, but keep the words")
+        repo.editEntry(id, "nope, but keep the words", mood = null)
         repo.drainOutbox()
         fake.refuseText = "never matches"
 
@@ -646,13 +646,122 @@ class GardenRepositoryTest {
         val id = journal().single().id
         fake.offline = true
         repo.setEntryPhoto(id, staged())
-        repo.editEntry(id, "better words")
+        repo.editEntry(id, "better words", mood = null)
         fake.offline = false
 
         assertTrue(repo.drainOutbox())
 
         assertEquals("better words", fake.entries.single().text)
         assertNotNull(fake.entries.single().photoPath)
+    }
+
+    // ── Moods: sent with the text ──────────────────────────────────────
+
+    @Test
+    fun aMoodGoesWithTheEntryAndEarnsNothingExtra() = runBlocking {
+        signIn()
+
+        assertEquals(SubmitResult.Planted(5, xp = 10), repo.submitEntry("a warm bath", voice = false, mood = 4))
+        repo.submitEntry("no words for it", voice = false)
+
+        assertEquals(4, fake.entries.first { it.text == "a warm bath" }.mood)
+        assertNull(fake.entries.first { it.text == "no words for it" }.mood)
+        assertEquals(listOf(null, 4), journal().map { it.mood })
+    }
+
+    @Test
+    fun changingTheMoodOfAQueuedEntrySendsOneSubmitWithTheFinalMood() = runBlocking {
+        signIn()
+        fake.offline = true
+        repo.submitEntry("a long day", voice = false, mood = 2)
+        val id = journal().single().id
+        repo.editEntry(id, "a long day, but a good dinner", mood = 4)
+        assertEquals(4, journal().single().mood)
+        fake.offline = false
+        fake.requests.clear()
+
+        repo.drainOutbox()
+
+        assertEquals(1, fake.rpcCalls("submit_gratitude_entry").size)
+        assertEquals(0, fake.rpcCalls("edit_gratitude_entry").size)
+        assertEquals(4, fake.entries.single().mood)
+        assertEquals("a long day, but a good dinner", fake.entries.single().text)
+    }
+
+    @Test
+    fun anEditCanTakeTheMoodOff() = runBlocking {
+        signIn()
+        repo.submitEntry("hard to say", voice = false, mood = 3)
+        val id = journal().single().id
+
+        repo.editEntry(id, "hard to say", mood = null)
+        repo.drainOutbox()
+
+        assertNull(fake.entries.single().mood)
+        assertNull(journal().single().mood)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun retryingARefusedEntryKeepsItsMood() = runBlocking {
+        signIn()
+        fake.refuseText = "rejected"
+        repo.submitEntry("rejected at first", voice = false, mood = 2)
+        val id = journal().single().id
+        assertEquals(SyncState.FAILED, journal().single().syncState)
+        fake.refuseText = null
+
+        repo.retryEntry(id)
+        repo.drainOutbox()
+
+        assertEquals(2, fake.entries.single().mood)
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+    }
+
+    @Test
+    fun savingAsNewKeepsTheMood() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        fake.rpcsFail = true
+        repo.editEntry("e00000", "written on the plane", mood = 5)
+        fake.deleteElsewhere("e00000")
+        fake.rpcsFail = false
+        repo.drainOutbox()
+
+        repo.saveAsNewEntry("e00000")
+
+        val kept = journal().single()
+        assertEquals(5, kept.mood)
+        assertEquals(5, fake.entries.single { it.id == kept.id }.mood)
+    }
+
+    @Test
+    fun aMoodChangedElsewhereArrivesWithASync() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        assertNull(journal().single().mood)
+
+        fake.setMoodElsewhere("e00000", 4)
+        repo.refreshAll(force = true)
+
+        assertEquals(4, journal().single().mood)
+    }
+
+    @Test
+    fun aSyncDuringAQueuedMoodChangeKeepsTheLocalMood() = runBlocking {
+        fake.addEntries(1)
+        signIn()
+        fake.rpcsFail = true
+        repo.editEntry("e00000", "thanks #0", mood = 2)
+        fake.setMoodElsewhere("e00000", 5)
+        repo.refreshAll(force = true)
+
+        assertEquals(2, journal().single().mood)
+
+        fake.rpcsFail = false
+        repo.drainOutbox()
+        assertEquals(2, fake.entries.single().mood)
+        assertEquals(2, journal().single().mood)
     }
 
     // ── The outbox: journal writes that work offline ───────────────────
@@ -723,8 +832,8 @@ class GardenRepositoryTest {
         fake.offline = true
         repo.submitEntry("first draft", voice = false)
         val id = journal().single().id
-        repo.editEntry(id, "second draft")
-        repo.editEntry(id, "final words")
+        repo.editEntry(id, "second draft", mood = null)
+        repo.editEntry(id, "final words", mood = null)
         assertEquals("final words", journal().single().entryText)
         fake.offline = false
         fake.requests.clear()
@@ -778,7 +887,7 @@ class GardenRepositoryTest {
         signIn()
         fake.offline = true
         repo.submitEntry("new one", voice = false)
-        repo.editEntry("e00000", "edited offline")
+        repo.editEntry("e00000", "edited offline", mood = null)
         repo.deleteEntry("e00001")
         fake.offline = false
         fake.requests.clear()
@@ -805,7 +914,7 @@ class GardenRepositoryTest {
         fake.addEntries(1)
         signIn()
         fake.rpcsFail = true
-        repo.editEntry("e00000", "written on the plane")
+        repo.editEntry("e00000", "written on the plane", mood = null)
         // Meanwhile the server's copy changes and a refresh reads it.
         fake.edit("e00000", "older, from the tablet")
         repo.refreshAll(force = true)
@@ -951,7 +1060,7 @@ class GardenRepositoryTest {
         signIn()
         val id = refusedEntry("refused draft")
 
-        repo.editEntry(id, "a better draft")
+        repo.editEntry(id, "a better draft", mood = null)
         repo.drainOutbox()
 
         assertEquals("a better draft", fake.entries.single().text)
@@ -963,12 +1072,12 @@ class GardenRepositoryTest {
         fake.addEntries(1)
         signIn()
         fake.refuseText = "rejected"
-        repo.editEntry("e00000", "rejected words")
+        repo.editEntry("e00000", "rejected words", mood = null)
         repo.drainOutbox()
         assertEquals(SyncState.FAILED, journal().single().syncState)
         fake.refuseText = null
 
-        repo.editEntry("e00000", "kinder words")
+        repo.editEntry("e00000", "kinder words", mood = null)
         repo.drainOutbox()
 
         // The retry's submit was recognised (no new row, no payment), then the edit applied.
@@ -994,7 +1103,7 @@ class GardenRepositoryTest {
         fake.addEntries(1)
         signIn()
         fake.refuseText = "rejected"
-        repo.editEntry("e00000", "rejected words")
+        repo.editEntry("e00000", "rejected words", mood = null)
         repo.drainOutbox()
         fake.refuseText = null
 
@@ -1025,7 +1134,7 @@ class GardenRepositoryTest {
         fake.addEntries(1)
         signIn()
         fake.rpcsFail = true
-        repo.editEntry("e00000", "written on the plane")
+        repo.editEntry("e00000", "written on the plane", mood = null)
         fake.deleteElsewhere("e00000")
         fake.rpcsFail = false
 

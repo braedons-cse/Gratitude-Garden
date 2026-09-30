@@ -35,7 +35,7 @@ class NewEntrySheetUITest {
                 NewEntrySheet(
                     submitting = false,
                     onDismiss = {},
-                    onSubmit = { text, _, _ -> submittedText = text },
+                    onSubmit = { text, _, _, _ -> submittedText = text },
                     preparePhoto = { error("not used") },
                 )
             }
@@ -54,7 +54,7 @@ class NewEntrySheetUITest {
         composeTestRule.onNodeWithTag("plant_it_button").assertIsEnabled()
 
         // 5. Click the "Plant it" button
-        composeTestRule.onNodeWithTag("plant_it_button").performClick()
+        composeTestRule.onNodeWithTag("plant_it_button").performScrollTo().performClick()
 
         // 6. Verify the onSubmit callback was called with the exact text
         composeTestRule.runOnIdle {
@@ -66,12 +66,56 @@ class NewEntrySheetUITest {
     fun aPhotoAloneCantPlantAThought() {
         composeTestRule.setContent {
             GratitudeGardenTheme {
-                NewEntrySheet(submitting = false, onDismiss = {}, onSubmit = { _, _, _ -> }, preparePhoto = { error("not used") })
+                NewEntrySheet(submitting = false, onDismiss = {}, onSubmit = { _, _, _, _ -> }, preparePhoto = { error("not used") })
             }
         }
 
-        composeTestRule.onNodeWithTag("entry_photo_add").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("entry_photo_add").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("plant_it_button").assertIsNotEnabled()
+    }
+
+    @Test
+    fun aPickedMoodGoesWithTheThought() {
+        var submitted: Pair<String, Int?>? = null
+        composeTestRule.setContent {
+            GratitudeGardenTheme {
+                NewEntrySheet(
+                    submitting = false,
+                    onDismiss = {},
+                    onSubmit = { text, _, mood, _ -> submitted = text to mood },
+                    preparePhoto = { error("not used") },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("new_entry_text_field").performTextInput("a slow Sunday")
+        composeTestRule.onNodeWithTag("entry_mood_4").performScrollTo().performClick().assertIsSelected()
+        composeTestRule.onNodeWithTag("entry_mood_2").assertIsNotSelected()
+        composeTestRule.onNodeWithTag("plant_it_button").performScrollTo().performClick()
+
+        composeTestRule.runOnIdle { assertEquals("a slow Sunday" to 4, submitted) }
+    }
+
+    @Test
+    fun tappingThePickedMoodAgainTakesItOff() {
+        var submittedMood: Int? = 0
+        composeTestRule.setContent {
+            GratitudeGardenTheme {
+                NewEntrySheet(
+                    submitting = false,
+                    onDismiss = {},
+                    onSubmit = { _, _, mood, _ -> submittedMood = mood },
+                    preparePhoto = { error("not used") },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithTag("new_entry_text_field").performTextInput("not sure how I feel")
+        composeTestRule.onNodeWithTag("entry_mood_4").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("entry_mood_4").performClick().assertIsNotSelected()
+        composeTestRule.onNodeWithTag("plant_it_button").performScrollTo().performClick()
+
+        composeTestRule.runOnIdle { assertEquals(null, submittedMood) }
     }
 
     @Test

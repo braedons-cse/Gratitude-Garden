@@ -108,6 +108,7 @@ class FakeSupabase {
         val coins: Int = 5,
         val xp: Int = XP_FIRST_ENTRY,
         var photoPath: String? = null,
+        var mood: Int? = null,
     )
 
     /** Add [count] entries dated today; ids and timestamps ascend. */
@@ -141,6 +142,11 @@ class FakeSupabase {
     /** Server-side edit, as from another device: new text, fresh `updated_at`. */
     fun edit(id: String, text: String) {
         entries.first { it.id == id }.apply { this.text = text; updatedAt = nextStamp() }
+    }
+
+    /** Server-side mood change, as from another device's edit. */
+    fun setMoodElsewhere(id: String, mood: Int?) {
+        entries.first { it.id == id }.apply { this.mood = mood; updatedAt = nextStamp() }
     }
 
     fun requestsTo(table: String) = requests.filter { it.contains("/rest/v1/$table?") || it.endsWith("/rest/v1/$table") }
@@ -214,10 +220,12 @@ class FakeSupabase {
             path == "/rest/v1/rpc/submit_gratitude_entry" -> {
                 val id = arg("p_id")!!
                 val text = arg("p_entry_text")!!
+                val mood = arg("p_mood")?.toInt()
                 val existing = entries.firstOrNull { it.id == id }
                 when {
                     existing != null -> reply(json(existing)) // a replay: the first row, unpaid
                     refused(text) -> reply(error("entry text required"), HttpStatusCode.BadRequest)
+                    mood != null && mood !in 1..5 -> reply(moodOutOfRange(), HttpStatusCode.BadRequest)
                     else -> {
                         val writtenAt = Instant.parse(arg("p_written_at")!!)
                         val day = writtenAt.atZone(ZoneId.of(arg("p_time_zone")!!)).toLocalDate().toString()
@@ -228,6 +236,7 @@ class FakeSupabase {
                             createdAt = format.format(writtenAt),
                             updatedAt = nextStamp(),
                             xp = if (entries.none { it.entryDate == day }) XP_FIRST_ENTRY else XP_EXTRA_ENTRY,
+                            mood = mood,
                         )
                         entries += entry
                         balance += entry.coins
@@ -239,12 +248,17 @@ class FakeSupabase {
             }
             path == "/rest/v1/rpc/edit_gratitude_entry" -> {
                 val text = arg("p_new_text")!!
+                val mood = arg("p_mood")?.toInt()
                 val entry = entries.firstOrNull { it.id == arg("p_entry_id") && it.deletedAt == null }
                 when {
+                    // p_mood has no default, so PostgREST finds no function without it.
+                    "p_mood" !in args -> reply(error("no edit_gratitude_entry without p_mood"), HttpStatusCode.NotFound)
                     entry == null -> reply(error("entry not found"), HttpStatusCode.BadRequest)
                     refused(text) -> reply(error("entry text required"), HttpStatusCode.BadRequest)
+                    mood != null && mood !in 1..5 -> reply(moodOutOfRange(), HttpStatusCode.BadRequest)
                     else -> {
                         entry.text = text
+                        entry.mood = mood
                         entry.updatedAt = nextStamp()
                         reply(json(entry))
                     }
@@ -341,13 +355,18 @@ class FakeSupabase {
     private fun json(e: Entry) =
         """{"id":"${e.id}","entry_text":"${e.text}","input_method":"text","coins_awarded":${e.coins},"xp_awarded":${e.xp},""" +
             """"entry_date":"${e.entryDate}","created_at":"${e.createdAt}","updated_at":"${e.updatedAt}",""" +
-            """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"},"photo_path":${e.photoPath?.let { "\"$it\"" } ?: "null"}}"""
+            """"deleted_at":${e.deletedAt?.let { "\"$it\"" } ?: "null"},"photo_path":${e.photoPath?.let { "\"$it\"" } ?: "null"},""" +
+            """"mood":${e.mood}}"""
 
     private fun refused(text: String) = refuseText?.let { it in text } == true
 
     /** A PostgREST error body, as for a `raise exception` in an RPC. */
     private fun error(message: String) =
         """{"code":"P0001","message":"$message","details":null,"hint":null}"""
+
+    /** What the column's check constraint says to a mood outside 1–5. */
+    private fun moodOutOfRange() =
+        """{"code":"23514","message":"new row for relation \"gratitude_entries\" violates check constraint \"gratitude_entries_mood_range\"","details":null,"hint":null}"""
 
 
     private var clock = 1_000_000L

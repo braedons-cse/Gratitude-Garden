@@ -136,6 +136,7 @@ val ADMIN_USER_TABLES: List<AdminTableSpec> = listOf(
         fields = listOf(
             AdminField("entry_text", "Entry text", AdminFieldType.TEXT),
             AdminField("input_method", "Input method", AdminFieldType.ENUM, enumValues = INPUT_METHOD),
+            AdminField("mood", "Mood (1–5)", AdminFieldType.INT, nullable = true),
             AdminField("coins_awarded", "Coins awarded", AdminFieldType.INT),
             AdminField("entry_date", "Entry date (YYYY-MM-DD)", AdminFieldType.DATE),
             AdminField("deleted_at", "Deleted at (soft delete)", AdminFieldType.TIMESTAMP, nullable = true),

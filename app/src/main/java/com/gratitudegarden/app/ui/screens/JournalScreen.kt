@@ -17,9 +17,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -50,9 +52,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gratitudegarden.app.data.GratitudeEntry
 import com.gratitudegarden.app.data.local.SyncState
+import com.gratitudegarden.app.model.Mood
 import com.gratitudegarden.app.util.LogComposableLifecycle
 import com.gratitudegarden.app.util.LogTags
 import com.gratitudegarden.app.ui.components.EntryPhoto
+import com.gratitudegarden.app.ui.components.MoodPicker
+import com.gratitudegarden.app.ui.components.MoodTag
 import com.gratitudegarden.app.ui.components.PhotoPickerRow
 import com.gratitudegarden.app.ui.components.PhotoViewer
 import com.gratitudegarden.app.ui.components.PillButton
@@ -108,7 +113,7 @@ fun JournalRoute() {
 @Composable
 fun JournalScreen(
     ui: JournalUiState,
-    onEdit: (id: String, text: String, photo: PhotoChange) -> Unit,
+    onEdit: (id: String, text: String, mood: Int?, photo: PhotoChange) -> Unit,
     onDelete: (String) -> Unit,
     onRetry: (String) -> Unit = {},
     onDiscard: (String) -> Unit = {},
@@ -252,10 +257,11 @@ fun JournalScreen(
     editEntry?.let { entry ->
         EditDialog(
             initial = entry.entryText,
+            initialMood = entry.mood,
             photoPath = entry.photoPath,
             loadPhoto = loadPhoto,
             preparePhoto = preparePhoto,
-            onSave = { text, photo -> onEdit(entry.id, text, photo); editEntry = null },
+            onSave = { text, mood, photo -> onEdit(entry.id, text, mood, photo); editEntry = null },
             onDismiss = { editEntry = null },
         )
     }
@@ -369,6 +375,10 @@ private fun EntryCard(
                 Box(Modifier.size(3.dp).clip(CircleShape).background(GgInkMuted))
                 if (entry.inputMethod == "voice_to_text") {
                     GgIcon(name = GgIconName.Mic, color = GgPrimary, size = 12.dp)
+                }
+                Mood.of(entry.mood)?.let { mood ->
+                    MoodTag(mood)
+                    Box(Modifier.size(3.dp).clip(CircleShape).background(GgInkMuted))
                 }
                 when (entry.syncState) {
                     // The server decides the reward, so there's no amount until it answers.
@@ -503,13 +513,16 @@ private fun DialogRow(label: String, onClick: () -> Unit, danger: Boolean = fals
 @Composable
 private fun EditDialog(
     initial: String,
+    initialMood: Int?,
     photoPath: String?,
     loadPhoto: suspend (String) -> File?,
     preparePhoto: suspend (Uri) -> File,
-    onSave: (String, PhotoChange) -> Unit,
+    /** The text, the mood as it should be now (null for none), and what to do with the photo. */
+    onSave: (String, Int?, PhotoChange) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var text by remember { mutableStateOf(initial) }
+    var mood by remember { mutableStateOf(initialMood) }
     val draft = rememberPhotoDraft(preparePhoto)
     // The entry's own photo, until it's replaced (the draft has one) or taken off.
     var removed by remember { mutableStateOf(false) }
@@ -517,7 +530,12 @@ private fun EditDialog(
     val keepsOwn = !removed && photoPath != null
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(GgBgSage).padding(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(GgBgSage)
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
         ) {
             Text("Edit thought", fontFamily = Caprasimo, fontSize = 20.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(14.dp))
@@ -532,7 +550,9 @@ private fun EditDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
+            MoodPicker(selected = mood, onSelect = { mood = it }, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(14.dp))
             PhotoPickerRow(
                 draft = draft,
                 hasPhoto = draft.staged != null || keepsOwn,
@@ -556,7 +576,7 @@ private fun EditDialog(
                         removed && photoPath != null -> PhotoChange.Remove
                         else -> PhotoChange.Keep
                     }
-                    onSave(text, change)
+                    onSave(text, mood, change)
                 },
                 enabled = text.isNotBlank() && !draft.preparing,
                 modifier = Modifier.fillMaxWidth(),

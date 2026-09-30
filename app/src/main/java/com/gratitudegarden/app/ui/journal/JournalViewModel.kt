@@ -145,18 +145,19 @@ class JournalViewModel(
     }
 
     /**
-     * Save an edit: the text, then the photo if it changed, in one coroutine so they reach
-     * the queue in that order. Text first matters for an entry the server refused: saving the
-     * text is what sends it again, and it must go with the new words, not the refused ones.
+     * Save an edit: the text and mood, then the photo if it changed, in one coroutine so they
+     * reach the queue in that order. Text first matters for an entry the server refused:
+     * saving the text is what sends it again, and it must go with the new words, not the
+     * refused ones. [mood] is what it should be now, null for none.
      */
-    fun edit(id: String, newText: String, photo: PhotoChange = PhotoChange.Keep) {
+    fun edit(id: String, newText: String, mood: Int?, photo: PhotoChange = PhotoChange.Keep) {
         if (newText.isBlank()) {
             (photo as? PhotoChange.Replace)?.file?.delete()
             return
         }
         viewModelScope.launch {
             try {
-                repo.editEntry(id, newText.trim())
+                repo.editEntry(id, newText.trim(), mood)
             } catch (e: Exception) {
                 (photo as? PhotoChange.Replace)?.file?.delete()
                 _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) }
