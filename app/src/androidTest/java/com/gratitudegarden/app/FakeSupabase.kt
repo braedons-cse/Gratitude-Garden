@@ -87,6 +87,9 @@ class FakeSupabase {
     @Volatile var activeBackdropId: String? = "i3"
     val entries = CopyOnWriteArrayList<Entry>()
 
+    /** Rows in one PostgREST answer; Supabase caps it at 1000 by default. Only own_photo_objects honours it. */
+    var maxRows = 1000
+
     /** The entry-photos bucket: object name to bytes. */
     val storedPhotos: MutableMap<String, ByteArray> = java.util.concurrent.ConcurrentHashMap()
 
@@ -205,7 +208,8 @@ class FakeSupabase {
             path == "/rest/v1/rpc/own_photo_objects" -> {
                 val prefix = "$userId/" + (arg("p_entry_id")?.let { "$it/" } ?: "")
                 // PostgREST's shape for a setof-scalar function; the repository reads either.
-                reply(storedPhotos.keys.filter { it.startsWith(prefix) }.sorted().joinToString(",", "[", "]") { "\"$it\"" })
+                val names = storedPhotos.keys.filter { it.startsWith(prefix) }.sorted().take(maxRows)
+                reply(names.joinToString(",", "[", "]") { "\"$it\"" })
             }
             path == "/rest/v1/rpc/submit_gratitude_entry" -> {
                 val id = arg("p_id")!!

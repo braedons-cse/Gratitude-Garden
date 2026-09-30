@@ -559,6 +559,87 @@ class GardenRepositoryTest {
     }
 
     @Test
+    fun aRetriedEntryWhosePhotoCameFromElsewhereNeedsNoUpload() = runBlocking {
+        fake.addEntries(1)
+        val id = fake.entries.single().id
+        val path = "${fake.userId}/$id/p1.jpg"
+        fake.setPhotoElsewhere(id, path)
+        signIn()
+        fake.refuseText = "nope"
+        repo.editEntry(id, "nope, not this")
+        repo.drainOutbox()
+        assertEquals(SyncState.FAILED, journal().single().syncState)
+        assertFalse("never shown here, so never downloaded", local(path).exists())
+        fake.refuseText = "never matches"
+        fake.requests.clear()
+
+        repo.retryEntry(id)
+        assertTrue(repo.drainOutbox())
+
+        assertEquals(SyncState.SYNCED, journal().single().syncState)
+        assertTrue("the server already has it", fake.photoUploads().isEmpty())
+        assertEquals(path, fake.entries.single().photoPath)
+        assertTrue(path in fake.storedPhotos)
+    }
+
+    @Test
+    fun moreFilesThanOneAnswerHoldsAreAllRemoved() = runBlocking {
+        signIn()
+        repo.submitEntry("a busy folder", voice = false, photo = staged())
+        val id = journal().single().id
+        // Uploads whose answers were lost, piled up past one PostgREST page.
+        repeat(1200) { fake.storedPhotos["${fake.userId}/$id/stray-%04d.jpg".format(it)] = byteArrayOf(1) }
+        fake.requests.clear()
+
+        repo.deleteEntry(id)
+        assertTrue(repo.drainOutbox())
+
+        assertTrue(fake.storedPhotos.isEmpty())
+        assertTrue(fake.rpcCalls("own_photo_objects").size >= 2)
+    }
+
+    @Test
+    fun aPhotoTheServerRefusesIsNotLeftInStorage() = runBlocking {
+        signIn()
+        repo.submitEntry("deleted on the tablet", voice = false)
+        val id = journal().single().id
+        fake.requests.clear()
+        fake.offline = true
+        repo.setEntryPhoto(id, staged())
+        val path = checkNotNull(journal().single().photoPath)
+        settleOfflineUploads(1)
+        fake.deleteElsewhere(id)
+        fake.offline = false
+        fake.requests.clear()
+
+        repo.drainOutbox()
+
+        assertEquals(SyncState.FAILED, journal().single().syncState)
+        assertEquals("uploaded, then refused", 1, fake.photoUploads().size)
+        assertFalse("and not left behind", path in fake.storedPhotos)
+    }
+
+    @Test
+    fun savingAsNewKeepsAPhotoThatWasNeverShownHere() = runBlocking {
+        fake.addEntries(1)
+        val id = fake.entries.single().id
+        fake.setPhotoElsewhere(id, "${fake.userId}/$id/p1.jpg", byteArrayOf(9, 9, 9))
+        signIn()
+        fake.refuseText = "nope"
+        repo.editEntry(id, "nope, but keep the words")
+        repo.drainOutbox()
+        fake.refuseText = "never matches"
+
+        repo.saveAsNewEntry(id)
+
+        val copy = journal().single { it.id != id }
+        assertEquals("nope, but keep the words", copy.entryText)
+        val path = checkNotNull(copy.photoPath)
+        assertTrue(path.startsWith("${fake.userId}/${copy.id}/"))
+        assertArrayEquals(byteArrayOf(9, 9, 9), fake.storedPhotos[path])
+    }
+
+    @Test
     fun editingTextWhileAPhotoWaitsKeepsBoth() = runBlocking {
         signIn()
         repo.submitEntry("first words", voice = false)

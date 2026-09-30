@@ -503,6 +503,9 @@ class GardenRepository(
         // that was already scheduled across restarts; this covers a write that raced a
         // finishing worker, and an app that was force-stopped, which cancels its jobs.
         watchScope.launch {
+            // Downloads and copies an earlier process didn't finish. Nothing of this run's
+            // is there yet.
+            withContext(Dispatchers.IO) { File(photoDir, ".tmp").deleteRecursively() }
             try {
                 if (db.outboxDao().size() > 0) outboxScheduler.schedule()
             } catch (e: Exception) {
@@ -881,11 +884,12 @@ class GardenRepository(
     suspend fun deleteEntry(id: String) {
         val uid = currentUid() ?: return
         localLock.withLock {
-            db.withTransaction {
+            val neverSent = db.withTransaction {
                 val waiting = db.outboxDao().opsFor(id).filter { it.seq != inFlight }
                 if (waiting.any { it.type == OutboxType.SUBMIT }) {
                     db.outboxDao().deleteFor(id)
                     db.entryDao().hardDelete(id)
+                    true
                 } else {
                     // Queued edits of it are moot now, photo changes too: the delete removes
                     // whatever photo it has on the server.
@@ -893,8 +897,12 @@ class GardenRepository(
                         .forEach { db.outboxDao().delete(it.seq) }
                     db.outboxDao().insert(OutboxOp(userId = uid, type = OutboxType.DELETE, entryId = id))
                     db.entryDao().markDeleted(id, Instant.now().toString(), SyncState.PENDING)
+                    false
                 }
             }
+            // Its submit hadn't gone, so neither had the photo queued behind it: the files are
+            // only here. Otherwise they stay until the delete is delivered and a prune runs.
+            if (neverSent) withContext(Dispatchers.IO) { File(photoDir, "$uid/$id").deleteRecursively() }
         }
         deliverSoon()
     }
@@ -999,11 +1007,11 @@ class GardenRepository(
      */
     suspend fun saveAsNewEntry(id: String): SubmitResult? {
         val entry = db.entryDao().get(id)?.takeIf { it.syncState == SyncState.FAILED } ?: return null
-        // Copied aside first: discarding lets go of the original's file.
+        // Copied aside first: discarding lets go of the original's file. Fetched if it was
+        // never shown here; if the server no longer has it either, the words go on alone.
+        val original = entry.photoPath?.let { photoFile(it) }
         val photo = withContext(Dispatchers.IO) {
-            entry.photoPath?.let(::localPhoto)?.takeIf { it.exists() }?.let { original ->
-                File(tempDir(), "${UUID.randomUUID()}.jpg").also { original.copyTo(it) }
-            }
+            original?.let { File(tempDir(), "${UUID.randomUUID()}.jpg").also { copy -> it.copyTo(copy) } }
         }
         try {
             discardEntry(id)
@@ -1083,7 +1091,7 @@ class GardenRepository(
                 inFlight = null
             }
         }
-        if (delivered) afterWrite(::syncEntries, ::refreshAccount) else prunePhotos(uid)
+        if (delivered) afterWrite(::syncEntries, ::refreshAccount)
         return true
     }
 
@@ -1117,22 +1125,36 @@ class GardenRepository(
             }
             OutboxType.PHOTO -> {
                 val path = op.photoPath
-                if (path != null) {
-                    val file = localPhoto(path)
-                    if (!file.exists()) throw MissingPhotoException(path)
+                // No file here means the photo came from elsewhere (a retried entry whose photo
+                // was synced but never shown on this device): the server already has it, and
+                // set_entry_photo says so. If it doesn't, the server refuses, which is right.
+                val file = path?.let(::localPhoto)?.takeIf { it.exists() }
+                if (file != null) {
                     val bytes = withContext(Dispatchers.IO) { file.readBytes() }
                     client.storage.from(PHOTO_BUCKET).upload(path, bytes) {
                         upsert = true // a resend writes the same bytes to the same name
                         contentType = ContentType.Image.JPEG
                     }
                 }
-                val reply = client.postgrest.rpc(
-                    "set_entry_photo",
-                    buildJsonObject {
-                        put("p_entry_id", op.entryId)
-                        put("p_photo_path", path)
-                    },
-                )
+                val reply = try {
+                    client.postgrest.rpc(
+                        "set_entry_photo",
+                        buildJsonObject {
+                            put("p_entry_id", op.entryId)
+                            put("p_photo_path", path)
+                        },
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Refused for good (the entry was deleted elsewhere): nothing will ever
+                    // point at the upload, so it goes now. A transient failure keeps it for
+                    // the retry, which sends the same name.
+                    if (file != null && !isTransient(e)) {
+                        runCatching { client.storage.from(PHOTO_BUCKET).delete(path) }
+                    }
+                    throw e
+                }
                 // The photo it replaced, and any upload a lost answer left behind.
                 removeServerPhotos(op.entryId, keep = path)
                 reply
@@ -1147,12 +1169,18 @@ class GardenRepository(
      * about (an upload whose answer was lost, another device's) go too.
      */
     private suspend fun removeServerPhotos(entryId: String?, keep: String? = null) {
-        val names = client.postgrest.rpc(
-            "own_photo_objects",
-            buildJsonObject { entryId?.let { put("p_entry_id", it) } },
-        ).decodeAs<JsonArray>().mapNotNull { it.firstString() }.filter { it != keep }
-        // The Storage API takes at most 1000 names per request.
-        names.chunked(1000).forEach { client.storage.from(PHOTO_BUCKET).delete(it) }
+        // PostgREST answers with at most MAX_ROWS names, so a big account takes several
+        // rounds: delete what came back, ask again, until a round comes back short.
+        while (true) {
+            val names = client.postgrest.rpc(
+                "own_photo_objects",
+                buildJsonObject { entryId?.let { put("p_entry_id", it) } },
+            ).decodeAs<JsonArray>().mapNotNull { it.firstString() }
+            val doomed = names.filter { it != keep }
+            // The Storage API also takes at most 1000 names per request.
+            doomed.chunked(1000).forEach { client.storage.from(PHOTO_BUCKET).delete(it) }
+            if (names.size < MAX_ROWS || doomed.isEmpty()) break
+        }
     }
 
     /** A `setof text` row, whichever way PostgREST shapes it: `"name"` or `{"own_photo_objects": "name"}`. */
@@ -1364,6 +1392,9 @@ class GardenRepository(
         /** Rows per request in the entry sync. PostgREST on Supabase caps a response at 1000. */
         const val SYNC_BATCH = 500
 
+        /** That cap: the most rows any one PostgREST response carries. */
+        const val MAX_ROWS = 1000
+
         /** What the home-screen widget reads: the streak, the day's count and cap, the garden. */
         private val WIDGET_TABLES = arrayOf(
             "user_stats", "gratitude_entries", "user_settings", "garden", "garden_plants", "items",
@@ -1381,11 +1412,7 @@ class GardenRepository(
          */
         fun isTransient(e: Throwable): Boolean = when (e) {
             is RestException -> e.statusCode in setOf(401, 403, 408, 429) || e.statusCode >= 500
-            is MissingPhotoException -> false
             else -> true // no connection, timeouts, and anything unrecognised
         }
     }
 }
-
-/** A queued photo whose file is no longer on the device. Sending it again won't help. */
-private class MissingPhotoException(path: String) : IllegalStateException("photo file missing: $path")

@@ -145,8 +145,9 @@ class JournalViewModel(
     }
 
     /**
-     * Save an edit: the text, and the photo if it changed. One after the other in one
-     * coroutine, so they reach the queue in order.
+     * Save an edit: the text, then the photo if it changed, in one coroutine so they reach
+     * the queue in that order. Text first matters for an entry the server refused: saving the
+     * text is what sends it again, and it must go with the new words, not the refused ones.
      */
     fun edit(id: String, newText: String, photo: PhotoChange = PhotoChange.Keep) {
         if (newText.isBlank()) {
@@ -155,15 +156,21 @@ class JournalViewModel(
         }
         viewModelScope.launch {
             try {
+                repo.editEntry(id, newText.trim())
+            } catch (e: Exception) {
+                (photo as? PhotoChange.Replace)?.file?.delete()
+                _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) }
+                return@launch
+            }
+            try {
                 when (photo) {
                     PhotoChange.Keep -> {}
                     PhotoChange.Remove -> repo.setEntryPhoto(id, null)
                     is PhotoChange.Replace -> repo.setEntryPhoto(id, photo.file)
                 }
-                repo.editEntry(id, newText.trim())
             } catch (e: Exception) {
                 (photo as? PhotoChange.Replace)?.file?.delete()
-                _ui.update { it.copy(error = e.toUserMessage("Couldn't save your edit")) }
+                _ui.update { it.copy(error = e.toUserMessage("Couldn't change the photo")) }
             }
         }
     }

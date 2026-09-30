@@ -539,9 +539,10 @@ private fun EditDialog(
                 // Offline and never downloaded, the entry's own photo has no file yet; the
                 // row shows a placeholder, and it can still be replaced or removed.
                 shown = draft.staged ?: current?.takeIf { keepsOwn },
+                // Undoes a picked replacement if there is one, bringing the entry's own photo
+                // back; only with nothing picked does it take the entry's photo off.
                 onRemove = {
-                    draft.drop()
-                    removed = true
+                    if (draft.staged != null) draft.drop() else removed = true
                 },
                 modifier = Modifier.fillMaxWidth(),
             )

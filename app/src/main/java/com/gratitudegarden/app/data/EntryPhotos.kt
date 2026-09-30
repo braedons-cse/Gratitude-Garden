@@ -9,6 +9,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -91,8 +92,15 @@ class PhotoPreparer(private val context: Context) {
             bitmap = opaque
         }
         val out = File(stagingDir(context), "${UUID.randomUUID()}.jpg")
-        out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, PHOTO_JPEG_QUALITY, it) }
-        bitmap.recycle()
+        try {
+            val written = out.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, PHOTO_JPEG_QUALITY, it) }
+            if (!written || out.length() == 0L) throw IOException("Couldn't encode the photo")
+        } catch (e: Exception) {
+            out.delete()
+            throw e
+        } finally {
+            bitmap.recycle()
+        }
         out
     }
 
@@ -109,5 +117,19 @@ class PhotoPreparer(private val context: Context) {
 
         /** Where a prepared photo waits until its entry is saved or the sheet is closed. */
         fun stagingDir(context: Context): File = File(context.cacheDir, "photo-staging").apply { mkdirs() }
+
+        /**
+         * Delete staged and captured files an earlier process left behind: a sheet that was
+         * never closed, a camera trip the process didn't survive. Only ones over an hour old,
+         * so a capture this very launch is coming back for (the camera app can outlive us)
+         * is kept.
+         */
+        fun sweepStale(context: Context, now: Long = System.currentTimeMillis()) {
+            listOf(File(context.cacheDir, CAPTURE_DIR), File(context.cacheDir, "photo-staging")).forEach { dir ->
+                dir.listFiles()?.filter { now - it.lastModified() > STALE_AFTER_MS }?.forEach { it.delete() }
+            }
+        }
+
+        private const val STALE_AFTER_MS = 60 * 60 * 1000L
     }
 }
