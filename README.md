@@ -43,6 +43,8 @@ shippable product.
   - [Backdrops](#backdrops)
   - [Daily streak reminders](#daily-streak-reminders)
   - [Home-screen widget and quick replies](#home-screen-widget-and-quick-replies)
+  - [Entry photos](#entry-photos)
+  - [Entry moods](#entry-moods)
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
 - [Setup & build](#setup--build)
@@ -102,8 +104,9 @@ per unit of work.
   moments at 7/30/100 days.
 - **1.4 Entry experience beyond a text box — M.** **Photos** attached to an entry (✅
   **done**: one per entry, from the gallery or the camera, added or changed later in Edit,
-  and written offline like the text; see [Entry photos](#entry-photos)); a mood tag per
-  entry, which unlocks 1.5; rotating daily prompts for the blank-page problem; multiple
+  and written offline like the text; see [Entry photos](#entry-photos)); a **mood** per
+  entry (✅ **done**: optional, one of five from rough to great, set when writing or in
+  Edit, and it unlocks 1.5; see [Entry moods](#entry-moods)); rotating daily prompts for the blank-page problem; multiple
   entries per day with a day-detail view; and lists/line breaks that survive a round trip.
 - **1.5 Insights / "your year in gratitude" — M.** Once entries carry mood and timestamps:
   themes over time, mood against streak length, "on this day last year", and a shareable
@@ -158,7 +161,7 @@ per unit of work.
 2. **The structural bet:** 1.1 offline/Room. Everything after is easier with it in place;
    everything built before it has to be retrofitted.
 3. **The retention loop:** 1.3 streak freeze (cheapest win on the list), 1.2 widget
-   (✅ done), 1.4 photos + mood.
+   (✅ done), 1.4 photos + mood (✅ both done).
 4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting, 0.7 listing assets → ship
    to a closed track and get ~20 real testers before public release.
 5. **Post-launch:** 1.5 insights, 2.1 privacy features, 2.3 monetization, 2.4 localization.
@@ -221,7 +224,7 @@ app/src/main/java/com/gratitudegarden/app/
 ├─ ui/
 │  ├─ GardenApp.kt                 # top-level nav: auth flow vs HomeScaffold + routes
 │  ├─ ViewModelExt.kt              # CreationExtras -> repositories
-│  ├─ components/                  # BottomNav, PillButton, PgTextField, EntryPhotos (picker, viewer), ...
+│  ├─ components/                  # BottomNav, PillButton, PgTextField, EntryPhotos (picker, viewer), EntryMood, ...
 │  ├─ theme/                       # Color.kt, Theme.kt, Type.kt (Caprasimo / Nunito)
 │  ├─ sprites/                     # vector plant / icon drawing
 │  ├─ garden/ shop/ journal/ me/   # feature ViewModels + UI state
@@ -241,7 +244,7 @@ app/src/staging/java/com/gratitudegarden/app/   # staging flavor only — never 
    └─ screens/
       └─ AdminDashboardScreen.kt   # the admin dashboard UI
 
-supabase/migrations/                # source of truth for the schema (20 files)
+supabase/migrations/                # source of truth for the schema (21 files)
 db/                                 # older hand-written SQL notes (subset of the above)
 docs/                               # perf + test-optimization write-ups
 profiling/                          # before/after profiling evidence
@@ -723,6 +726,34 @@ at this size. One more reason a real launch probably wants Pro.
   other's upload in their cleanup step, leaving the entry pointing at a missing file (a
   placeholder everywhere). It takes near-simultaneous changes to the same entry from two
   phones. Setting the photo again fixes it.
+
+### Entry moods
+
+Roadmap 1.4, second slice. An entry can carry a mood, one of five in order: **rough, low,
+okay, good, great** (stored as 1–5). It's optional: the entry sheet asks "How are you
+feeling?" under the text, nothing is picked until a face is tapped, and tapping the picked
+one again takes it off. It can be set, changed or cleared later from **Edit thought**, and
+shows in the Journal as a small face and its word next to the time. The notification's
+quick reply saves with none.
+
+- **Why a scale, not labels.** Five ordered points can be averaged and trended, which is
+  what 1.5's insights need (mood against streak length, a year's mood); a set of named
+  feelings could only be counted.
+- **No reward.** Like a photo, a mood changes nothing about coins, XP, the cap or the
+  streak. Text is what makes an entry.
+- **It travels with the text** (`20260930120000_entry_moods`). `submit_gratitude_entry`
+  takes `p_mood` when the entry is written, and `edit_gratitude_entry` now always sets text
+  and mood together: an edit sends the entry's whole state, null meaning no mood, so there's
+  no "unchanged" to get wrong and a replayed or folded edit lands the same. Offline, the
+  mood rides on the same `SUBMIT` / `EDIT` outbox op as the text and folds with it; a
+  retried entry goes out with its mood as it is now. Unlike photos there's no separate op:
+  it's one small value.
+- **Server checks.** A check constraint keeps the column to 1–5 or null. Only those two RPCs
+  write it; there's still no owner UPDATE policy on `gratitude_entries`. Both functions
+  gained a parameter, so each was dropped and created again rather than replaced (an old
+  overload would stay reachable through PostgREST).
+- **Accessibility.** The five faces are a radio group: each reads "Mood: good", with its
+  selected state. In the Journal the face and word read as one phrase, "Feeling good".
 
 ### Account deletion
 
