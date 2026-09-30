@@ -689,7 +689,10 @@ photo changes nothing about coins, XP, the cap or the streak.
   its own outbox op (`PHOTO`) after the submit, so a slow upload never holds up the reward.
   The op uploads the file, calls `set_entry_photo`, then removes anything else in the
   entry's folder; every step is safe to repeat, so a replay cleans up after itself. Two
-  photo changes made while offline fold into one.
+  photo changes made while offline fold into one. If the server refuses the change (the
+  entry was deleted elsewhere), the upload is deleted again. With no local file (a retried
+  entry whose photo came from another device) there's nothing to upload, and
+  `set_entry_photo` confirms the server already has it.
 - **Reading.** Photos from another device, or from before a reinstall, download the first
   time they're shown (`downloadAuthenticated`) and are kept. Offline, a photo that was never
   downloaded shows a placeholder. Files nothing refers to any more (replaced, removed, or
@@ -708,6 +711,19 @@ delete, and every file the user has before their account is deleted.
 **Storage budget.** On the Free tier the project has 1 GB of storage, roughly 2–3k photos
 at this size. One more reason a real launch probably wants Pro.
 
+**Known limits**, accepted for now:
+
+- **A failed account deletion can still lose the photos.** They have to go first (Supabase
+  won't delete a user who owns files), so if the final `delete_current_user` call then
+  fails, the account survives without them and its entries show a placeholder where each
+  photo was. The user had asked for everything to be deleted, and trying again finishes
+  the job. Avoiding it entirely would need the deletion to run server-side, e.g. an Edge
+  Function with the service key.
+- **Two devices changing one entry's photo at the same moment** can each delete the
+  other's upload in their cleanup step, leaving the entry pointing at a missing file (a
+  placeholder everywhere). It takes near-simultaneous changes to the same entry from two
+  phones. Setting the photo again fixes it.
+
 ### Account deletion
 
 Users can delete their own account, and deletion is *complete* — it removes the login and
@@ -722,8 +738,10 @@ wipes every associated row.
   settings, stats, wallet, entries, garden + plants, inventory).
 - **Photos first.** Supabase refuses to delete a user who still owns storage objects, and
   SQL can't delete them, so before calling `delete_current_user` the app lists the user's
-  files (`own_photo_objects`) and deletes them through the Storage API, 1000 at a time. If
-  that fails, nothing has been deleted and the user sees the error.
+  files (`own_photo_objects`, asked again until none are left, since one answer holds at
+  most 1000) and deletes them through the Storage API. If that fails partway, the account
+  is still there and the user sees the error; see [Entry photos](#entry-photos) for what a
+  failure after this step costs.
 - **Admin dashboard "Danger zone":** admins get a real *Delete entire account* action per
   user (via `admin_delete_user`). **Known gap:** it fails for a user who has photos, since
   an admin can't list or delete another user's files. Staging-only, so it doesn't block
