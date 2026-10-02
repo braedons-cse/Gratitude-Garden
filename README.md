@@ -45,6 +45,7 @@ shippable product.
   - [Home-screen widget and quick replies](#home-screen-widget-and-quick-replies)
   - [Entry photos](#entry-photos)
   - [Entry moods](#entry-moods)
+  - [Crash reports and the funnel](#crash-reports-and-the-funnel)
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
 - [Setup & build](#setup--build)
@@ -67,9 +68,9 @@ but disqualifying on a public store listing.
 | 0.1 | **Rebrand off the course namespace** | M | ✅ **Done** — `com.cse5236.gratitudegarden` → `com.gratitudegarden.app`, across `namespace`, `applicationId`, all 48 source files, and the reminder broadcast action. The application ID is **permanent once published**, which is why this landed before any feature work. |
 | 0.2 | **Signing, minification, real release build** | S/M | ✅ **Done** — R8 + resource shrinking on, release signed with an upload key kept outside the repo, and the signed build walked end to end on an emulator (signup, entries, planting, watering, journal, reminders, sign-out) with no crashes. No hand-written keep rules were needed. Play App Signing enrollment happens at first upload. *Original scope:* No signing config existed and R8 was off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
 | 0.3 | **Get the admin dashboard out of the consumer build** | S | ✅ **Done** — a `staging` flavor holds all admin code; the `consumer` build compiles an empty stub, and an admin account signed into it sees no dashboard. *Original scope:* `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
-| 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, microphone, notifications. The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
+| 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, photos, microphone, notifications, and crash logs and diagnostics (Sentry, since 0.6). The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
 | 0.5 | **Harden secrets and key handling** | S | ✅ **Done** — two coin-minting holes closed, then the policy audit found three more (a privilege escalation among them) and closed those too; see [Server-authoritative economy](#server-authoritative-economy) and [Client write surface](#client-write-surface). |
-| 0.6 | **Crash reporting and basic analytics** | S | Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
+| 0.6 | **Crash reporting and basic analytics** | S | ✅ **Done** — Sentry reports crashes, ANRs and unexpected caught errors, scrubbed on the device first; the first-week funnel is SQL over data we already store, so the app sends no analytics events; see [Crash reports and the funnel](#crash-reports-and-the-funnel). *Original scope:* Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
 | 0.7 | **Store listing assets** | M | Feature graphic, 4–8 phone screenshots (ideally a short video), 512px icon, short + full description, content rating questionnaire. The launcher icon is still the Android Studio template — that alone reads as "unfinished" in search results. Design work, routinely underestimated. |
 | 0.8 | **Notification & alarm permission posture** | S | ✅ **Done** — `SCHEDULE_EXACT_ALARM` dropped; the reminder always uses the inexact, Doze-safe `setAndAllowWhileIdle`, and was watched firing and re-arming on an emulator. The WorkManager move was dropped on inspection: WorkManager declares `RECEIVE_BOOT_COMPLETED` itself (so it couldn't be removed), and Android defers its work hardest for rarely-opened apps, which are the users the nudge is for. *Original scope:* We held `SCHEDULE_EXACT_ALARM` with a documented inexact fallback. Play scrutinizes exact alarms and a daily journaling nudge is unlikely to qualify for an exemption. Move the reminder fully to WorkManager and drop the permission (and `RECEIVE_BOOT_COMPLETED` with it). Fewer sensitive permissions = smoother review. |
 
@@ -160,9 +161,9 @@ per unit of work.
    strictly more painful the more code exists. Before any feature work.
 2. **The structural bet:** 1.1 offline/Room. Everything after is easier with it in place;
    everything built before it has to be retrofitted.
-3. **The retention loop:** 1.3 streak freeze (cheapest win on the list), 1.2 widget
+3. **The retention loop:** 1.3 streak freeze (✅ done), 1.2 widget
    (✅ done), 1.4 photos + mood (✅ both done).
-4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting, 0.7 listing assets → ship
+4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting (✅ done), 0.7 listing assets → ship
    to a closed track and get ~20 real testers before public release.
 5. **Post-launch:** 1.5 insights, 2.1 privacy features, 2.3 monetization, 2.4 localization.
 
@@ -191,6 +192,7 @@ These block or reshape the work above and should be settled before building.
 | Reminders | `AlarmManager` (inexact, Doze-safe) + `BootReceiver`; no exact-alarm permission |
 | Widget | Jetpack Glance (`glance-appwidget` `1.2.0`) |
 | Images | Coil 3 (`coil-compose` `3.4.0`), local files only; 3.5+ needs Kotlin 2.4 |
+| Crash reports | Sentry (`sentry-android-core` `8.59.0`, Gradle plugin `6.23.0`); off without a DSN |
 
 ---
 
@@ -231,7 +233,7 @@ app/src/main/java/com/gratitudegarden/app/
 │  └─ screens/
 │     ├─ GardenScreen.kt ShopScreen.kt JournalScreen.kt MeScreen.kt
 │     └─ LoginScreen.kt SignUpScreen.kt
-└─ util/                           # lifecycle logging helpers
+└─ util/                           # lifecycle logging, Diagnostics (crash reports + scrubbing)
 
 app/src/staging/java/com/gratitudegarden/app/   # staging flavor only — never in the Play build
 ├─ data/
@@ -244,7 +246,7 @@ app/src/staging/java/com/gratitudegarden/app/   # staging flavor only — never 
    └─ screens/
       └─ AdminDashboardScreen.kt   # the admin dashboard UI
 
-supabase/migrations/                # source of truth for the schema (21 files)
+supabase/migrations/                # source of truth for the schema (22 files)
 db/                                 # older hand-written SQL notes (subset of the above)
 docs/                               # perf + test-optimization write-ups
 profiling/                          # before/after profiling evidence
@@ -755,6 +757,62 @@ quick reply saves with none.
 - **Accessibility.** The five faces are a radio group: each reads "Mood: good", with its
   selected state. In the Journal the face and word read as one phrase, "Feeling good".
 
+### Crash reports and the funnel
+
+Roadmap 0.6. Two halves, chosen so the app collects as little as it can.
+
+**Crash reports go to Sentry** (`util/Diagnostics.kt`), started first thing in the
+`Application`. Crashes and ANRs are automatic. Two kinds of caught error are reported too: a
+failure a screen shows as its fallback copy (`toUserMessage`), unless it was a lost
+connection or one of the server errors raised on purpose; and an outbox op the server
+refuses, other than the daily cap or an entry deleted elsewhere, which the Journal already
+explains. Each event's `environment` is the flavor and build type (`consumer-release`).
+
+- **Off without a DSN.** `SENTRY_DSN` in `local.properties` turns it on; without it nothing
+  is initialised and every call is a no-op. Sentry's own startup provider is switched off in
+  the manifest, so it can't start without the scrubbing below.
+- **Nothing that names the person.** No account ID is attached (Sentry's `user.id` is a
+  random install ID), `sendDefaultPii` stays off so the SDK sends no IP (the server side is
+  below), and there are no screenshots or view hierarchies. Only `sentry-android-core` is
+  included: no NDK, and no session replay, which would record the screen.
+- **Scrubbed on the device.** `beforeSend` and `beforeBreadcrumb` pass every message through
+  `scrub()`, because the raw text isn't safe: supabase-kt's exceptions carry the request URL
+  and a `Headers:` line (API key and the user's token), and when Postgres rejects a row it
+  quotes the row, **journal text included** (`Failing row contains (…)`). Removed: header
+  lines, quoted rows and key values, tokens, URL query strings (Postgrest filters carry IDs),
+  UUIDs (user, entry and photo IDs; photo paths are made of them) and email addresses.
+  `ScrubTest` covers each one with the real message shapes.
+- **The Gradle plugin does only the mapping.** It stamps each release build with the ID of
+  its R8 mapping, so traces deobfuscate, and uploads the mapping when `SENTRY_AUTH_TOKEN` is
+  set. Its bytecode instrumentation (network, database, file I/O, logcat) is off: those would
+  capture request URLs and log lines.
+- **In the Sentry project settings** (Security & Privacy), three things, none optional:
+  *Prevent Storing of IP Addresses*, the server-side data scrubber, and an **Advanced Data
+  Scrubbing rule: Remove · Anything · `$user.geo.**`**. Even with `sendDefaultPii` off,
+  Sentry reads the connection's IP at ingest and derives a city from it; the IP setting drops
+  the IP but keeps the city (a known Sentry limitation, getsentry/sentry#92201). Both test
+  events on 2026-10-02 came in with "US, Powell", the second after the IP setting was on;
+  the third, after the rule (dataset Errors / Transactions / Attachments), had none. Nothing
+  on the client can stop it.
+- **Mapping upload needs an organization auth token** (`sntrys_…`, Settings → Auth Tokens),
+  which also carries the EU region. A token that's set but rejected fails the release build;
+  with none set, the upload is skipped.
+
+**The funnel is SQL** (`20261001120000_signup_funnel`), built from data the server already
+has, so the app sends no analytics events and there's nothing new to declare:
+
+```sql
+select * from analytics.signup_funnel;    -- by signup week
+select * from analytics.signup_journeys;  -- one row per person
+```
+
+Signed up → wrote an entry → wrote on day 1 → wrote on day 2 → wrote on day 7, with day 1
+being the local date of signup in the user's time zone. "Came back" means *wrote* again,
+not opened the app. The rates count only people whose day 2 or day 7 is already over, so a
+week-old cohort isn't read as churned. Admins (today, the test accounts) are left out. The
+views live in an `analytics` schema that PostgREST doesn't serve, and no API role has any
+grant on it; read them from the dashboard's SQL editor.
+
 ### Account deletion
 
 Users can delete their own account, and deletion is *complete* — it removes the login and
@@ -893,6 +951,13 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
    SUPABASE_ANON_KEY=<your anon key>
    ```
    These are surfaced to code as `BuildConfig.SUPABASE_URL` / `BuildConfig.SUPABASE_ANON_KEY`.
+   Optionally, crash reports (see [Crash reports and the funnel](#crash-reports-and-the-funnel)):
+   ```properties
+   SENTRY_DSN=<the project's DSN>        # without it, nothing is reported
+   SENTRY_ORG=<org slug>                 # these three upload each release's R8 mapping
+   SENTRY_PROJECT=<project slug>
+   SENTRY_AUTH_TOKEN=<org auth token>
+   ```
 3. **Build and test:**
    ```bash
    ./gradlew assembleStagingDebug      # build the debug APK (staging flavor)
@@ -926,9 +991,10 @@ UPLOAD_KEY_PASSWORD=...
 ```
 
 Without those properties release still builds, just unsigned. Only ever upload `consumer`;
-`staging` carries the admin dashboard. Crash stack traces from release are obfuscated — retrace
-them against `app/build/outputs/mapping/consumerRelease/mapping.txt`, which must be kept for
-every build that gets uploaded. **Back up the keystore and its password**: losing them means
+`staging` carries the admin dashboard. Crash stack traces from release are obfuscated. With the Sentry
+token set, each build's mapping is uploaded and Sentry shows real names; either way, keep
+`app/build/outputs/mapping/consumerRelease/mapping.txt` for every build that gets uploaded,
+to retrace Play Console's traces by hand. **Back up the keystore and its password**: losing them means
 never shipping an update under this application ID again.
 
 ---
