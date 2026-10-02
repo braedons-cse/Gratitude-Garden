@@ -21,6 +21,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.GratitudeGarden">
+        <!-- Sentry starts from the Application (util.Diagnostics), with the scrubbing set up
+             and only when the build has a DSN; not from its own startup provider. -->
+        <meta-data
+            android:name="io.sentry.auto-init"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

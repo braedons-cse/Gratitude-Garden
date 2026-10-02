@@ -12,6 +12,7 @@ import com.gratitudegarden.app.data.local.SyncState
 import com.gratitudegarden.app.data.local.epochMicros
 import com.gratitudegarden.app.data.local.toEntity
 import com.gratitudegarden.app.data.local.toRow
+import com.gratitudegarden.app.util.Diagnostics
 import com.gratitudegarden.app.util.LogTags
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
@@ -1096,6 +1097,12 @@ class GardenRepository(
                 }
                 val reason = (e as? RestException)?.error ?: e.message.orEmpty()
                 Log.w(LogTags.APP_LOGIC, "Server refused a queued ${op.type}: $reason")
+                // The cap and a deletion elsewhere are the refusals the Journal expects
+                // (refusalReason); any other means a thought the app let through and the
+                // server didn't.
+                if (EXPECTED_REFUSALS.none { it in reason }) {
+                    Diagnostics.warn("Server refused a queued ${op.type}: $reason")
+                }
                 localLock.withLock {
                     db.withTransaction {
                         db.outboxDao().deleteFor(op.entryId)
@@ -1423,6 +1430,9 @@ class GardenRepository(
          * delivered all the same; this only bounds the "Planting…" spinner.
          */
         val SUBMIT_WAIT = 8.seconds
+
+        /** Refusals that are the user's situation, not a bug; the Journal explains each one. */
+        private val EXPECTED_REFUSALS = listOf("daily entry cap", "entry not found")
 
         /**
          * Worth retrying: an expired or not-yet-refreshed token, a timeout, rate limiting,

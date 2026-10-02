@@ -4,6 +4,7 @@ import android.app.Application
 import com.gratitudegarden.app.data.PhotoPreparer
 import com.gratitudegarden.app.di.AppContainer
 import com.gratitudegarden.app.notifications.ReminderNotifications
+import com.gratitudegarden.app.util.Diagnostics
 import com.gratitudegarden.app.widget.WidgetSync
 import com.gratitudegarden.app.widget.publishPreviews
 import kotlin.concurrent.thread
@@ -18,6 +19,8 @@ class GratitudeGardenApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // First, so a crash anywhere below is reported.
+        Diagnostics.init(this)
         container = AppContainer(this)
         // Register the reminder channel up front so notifications can post
         // (and so the channel shows in system settings) from any entry point.

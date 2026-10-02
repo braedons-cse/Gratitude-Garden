@@ -1,9 +1,11 @@
 package com.gratitudegarden.app.ui
 
 import android.util.Log
+import com.gratitudegarden.app.util.Diagnostics
 import com.gratitudegarden.app.util.LogTags
 import io.github.jan.supabase.exceptions.HttpRequestException
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 
 internal const val OFFLINE_MESSAGE =
     "We can't reach the garden right now. Check your connection and try again."
@@ -30,8 +32,14 @@ internal fun userMessage(
     else -> e.message?.let(known) ?: fallback
 }
 
-/** [userMessage], logging the full exception first so the detail isn't lost. */
+/**
+ * [userMessage], logging the full exception first so the detail isn't lost. One that's
+ * neither a lost connection nor a server error we raise on purpose is also reported.
+ */
 internal fun Throwable.toUserMessage(fallback: String, known: (String) -> String? = { null }): String {
     Log.w(LogTags.APP_LOGIC, fallback, this)
+    if (!isOffline(this) && this !is CancellationException && message?.let(known) == null) {
+        Diagnostics.report(this, fallback)
+    }
     return userMessage(this, fallback, known)
 }

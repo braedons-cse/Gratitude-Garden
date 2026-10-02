@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+    alias(libs.plugins.sentry)
 }
 
 // Read Supabase keys from local.properties (gitignored) so they aren't committed.
@@ -41,6 +42,8 @@ android {
             "String", "SUPABASE_ANON_KEY",
             "\"${secret("SUPABASE_ANON_KEY")}\"",
         )
+        // Where crash reports go (see util.Diagnostics). Empty means none are sent.
+        buildConfigField("String", "SENTRY_DSN", "\"${secret("SENTRY_DSN")}\"")
     }
 
     // `consumer` is what ships to Play. `staging` is the same app plus the admin dashboard
@@ -96,6 +99,25 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
+// Sentry's build side. It ties each release build to its R8 mapping so stack traces read as
+// real names, and uploads the mapping when SENTRY_AUTH_TOKEN is set. Everything else it can
+// add to the bytecode stays off: no network, database or logcat capture, which could carry
+// request URLs or journal text, and the SDK is a normal dependency below rather than
+// auto-installed.
+val sentryAuthToken = secret("SENTRY_AUTH_TOKEN")
+sentry {
+    org.set(secret("SENTRY_ORG"))
+    projectName.set(secret("SENTRY_PROJECT"))
+    authToken.set(sentryAuthToken)
+    includeProguardMapping.set(true)
+    autoUploadProguardMapping.set(sentryAuthToken.isNotEmpty())
+    uploadNativeSymbols.set(false)
+    includeSourceContext.set(false)
+    tracingInstrumentation { enabled.set(false) }
+    autoInstallation { enabled.set(false) }
+    telemetry.set(false)
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -133,6 +155,9 @@ dependencies {
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.storage)
     implementation(libs.ktor.client.okhttp)
+
+    // Crash and ANR reports, scrubbed on the device first (util.Diagnostics)
+    implementation(libs.sentry.android.core)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
