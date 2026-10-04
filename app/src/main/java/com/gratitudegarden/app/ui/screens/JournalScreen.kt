@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
@@ -38,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -88,9 +86,15 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.gratitudegarden.app.ui.components.EntryText
+import com.gratitudegarden.app.ui.components.EntryTextField
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 @Composable
-fun JournalRoute() {
+fun JournalRoute(onWrite: () -> Unit = {}) {
     LogComposableLifecycle(LogTags.JOURNAL_SCREEN)
     val vm: JournalViewModel = viewModel(factory = JournalViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -106,6 +110,8 @@ fun JournalRoute() {
         onLoadMore = vm::loadMore,
         loadPhoto = vm::photoFile,
         preparePhoto = vm::preparePhoto,
+        entriesOn = vm::entriesOn,
+        onWrite = onWrite,
     )
 }
 
@@ -123,6 +129,8 @@ fun JournalScreen(
     onLoadMore: () -> Unit = {},
     loadPhoto: suspend (String) -> File? = { null },
     preparePhoto: suspend (Uri) -> File = { error("no photo preparer") },
+    entriesOn: (LocalDate) -> Flow<List<GratitudeEntry>> = { flowOf(emptyList()) },
+    onWrite: () -> Unit = {},
 ) {
     val context = LocalContext.current
     LaunchedEffect(ui.error) {
@@ -136,6 +144,7 @@ fun JournalScreen(
     var editEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var deleteEntry by remember { mutableStateOf<GratitudeEntry?>(null) }
     var viewing by remember { mutableStateOf<File?>(null) }
+    var openDay by remember { mutableStateOf<LocalDate?>(null) }
 
     // Ask the ViewModel for more of the history as the user nears the end of the list.
     // Only visible rows are ever composed (LazyColumn), and the ViewModel holds only
@@ -196,7 +205,7 @@ fun JournalScreen(
             }
 
             Spacer(Modifier.height(12.dp))
-            WeekStrip(entryDates = ui.entryDates, frozenDates = ui.frozenDates)
+            WeekStrip(entryDates = ui.entryDates, frozenDates = ui.frozenDates, onOpenDay = { openDay = it })
             Spacer(Modifier.height(14.dp))
         }
 
@@ -213,7 +222,12 @@ fun JournalScreen(
                     fontSize = 11.sp,
                     letterSpacing = 1.sp,
                     color = GgInkMuted,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+                    modifier = Modifier
+                        .padding(top = 6.dp, bottom = 8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable(onClickLabel = "Open ${section.label}") {
+                            openDay = runCatching { LocalDate.parse(section.date) }.getOrNull()
+                        },
                 )
             }
             items(section.entries, key = { it.id }) { entry ->
@@ -229,6 +243,19 @@ fun JournalScreen(
 
         item(key = "footer") { Spacer(Modifier.height(20.dp)) }
     }
+    }
+
+    openDay?.let { day ->
+        DayDetailDialog(
+            day = day,
+            entries = remember(day) { entriesOn(day) },
+            thoughtsLeft = ui.thoughtsLeft,
+            onEntryClick = { actionEntry = it },
+            onWrite = { openDay = null; onWrite() },
+            loadPhoto = loadPhoto,
+            onOpenPhoto = { viewing = it },
+            onDismiss = { openDay = null },
+        )
     }
 
     // Action menu. An entry the server refused gets its own, which says why.
@@ -277,7 +304,7 @@ fun JournalScreen(
 }
 
 @Composable
-private fun WeekStrip(entryDates: Set<String>, frozenDates: Set<String>) {
+private fun WeekStrip(entryDates: Set<String>, frozenDates: Set<String>, onOpenDay: (LocalDate) -> Unit) {
     val today = remember { LocalDate.now() }
     val days = remember(entryDates) { (6 downTo 0).map { today.minusDays(it.toLong()) } }
     Row(
@@ -305,7 +332,10 @@ private fun WeekStrip(entryDates: Set<String>, frozenDates: Set<String>) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.clearAndSetSemantics { contentDescription = dayLabel },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = on, onClickLabel = "Open this day") { onOpenDay(day) }
+                    .clearAndSetSemantics { contentDescription = dayLabel },
             ) {
                 Text(
                     text = day.dayOfWeek.name.take(1),
@@ -333,7 +363,7 @@ private fun WeekStrip(entryDates: Set<String>, frozenDates: Set<String>) {
 }
 
 @Composable
-private fun EntryCard(
+internal fun EntryCard(
     entry: GratitudeEntry,
     onClick: () -> Unit,
     loadPhoto: suspend (String) -> File?,
@@ -355,13 +385,15 @@ private fun EntryCard(
             MaturePlant(colors = PlantPalette.forSeed(entry.id), size = 40.dp)
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
+            EntryText(
                 text = entry.entryText,
-                fontFamily = Nunito,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.5.sp,
-                color = GgInk,
-                lineHeight = 20.sp,
+                style = TextStyle(
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.5.sp,
+                    color = GgInk,
+                    lineHeight = 20.sp,
+                ),
             )
             entry.photoPath?.let { path -> EntryPhoto(path = path, load = loadPhoto, onOpen = onOpenPhoto) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -521,7 +553,7 @@ private fun EditDialog(
     onSave: (String, Int?, PhotoChange) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var text by remember { mutableStateOf(initial) }
+    var text by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     var mood by remember { mutableStateOf(initialMood) }
     val draft = rememberPhotoDraft(preparePhoto)
     // The entry's own photo, until it's replaced (the draft has one) or taken off.
@@ -539,17 +571,12 @@ private fun EditDialog(
         ) {
             Text("Edit thought", fontFamily = Caprasimo, fontSize = 20.sp, color = GgPrimaryDeep)
             Spacer(Modifier.height(14.dp))
-            Box(
-                modifier = Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(14.dp)).background(Color.White).padding(14.dp),
-            ) {
-                BasicTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = GgInk),
-                    cursorBrush = SolidColor(GgPrimary),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            EntryTextField(
+                value = text,
+                onValueChange = { text = it },
+                placeholder = "Something you're grateful for…",
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(14.dp))
             MoodPicker(selected = mood, onSelect = { mood = it }, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(14.dp))
@@ -576,9 +603,9 @@ private fun EditDialog(
                         removed && photoPath != null -> PhotoChange.Remove
                         else -> PhotoChange.Keep
                     }
-                    onSave(text, mood, change)
+                    onSave(text.text, mood, change)
                 },
-                enabled = text.isNotBlank() && !draft.preparing,
+                enabled = text.text.isNotBlank() && !draft.preparing,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(8.dp))

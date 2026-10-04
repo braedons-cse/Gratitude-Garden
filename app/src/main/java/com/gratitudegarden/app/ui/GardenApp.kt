@@ -132,6 +132,8 @@ private fun HomeScaffold(
     // While a plant is being dragged in the Garden, freeze the pager so the swipe
     // gesture doesn't fight the drag.
     var gardenDragging by remember { mutableStateOf(false) }
+    // The Journal's day view asked for the entry sheet; it opens the same way a Write link does.
+    var journalWrite by remember { mutableStateOf(false) }
 
     // A Write link lands on the Garden tab, with nothing over it. Jump, don't animate: the
     // pages in between would all compose on the way past.
@@ -181,9 +183,12 @@ private fun HomeScaffold(
                             onDragActive = { gardenDragging = it },
                             // Only once the pager has settled here: a Garden page composed
                             // mid-swipe can be disposed with the sheet open in it.
-                            openEntrySheet = writeRequested &&
+                            openEntrySheet = (writeRequested || journalWrite) &&
                                 pagerState.settledPage == 0 && !pagerState.isScrollInProgress,
-                            onEntrySheetOpened = onWriteHandled,
+                            onEntrySheetOpened = {
+                                journalWrite = false
+                                onWriteHandled()
+                            },
                             onOpenShop = {
                                 val shop = tabs.indexOfFirst { it.route == "shop" }
                                 scope.launch { pagerState.animateScrollToPage(shop) }
@@ -195,7 +200,12 @@ private fun HomeScaffold(
                                 scope.launch { pagerState.animateScrollToPage(0) }
                             },
                         )
-                        "journal" -> JournalRoute()
+                        "journal" -> JournalRoute(
+                            onWrite = {
+                                journalWrite = true
+                                scope.launch { pagerState.animateScrollToPage(0) }
+                            },
+                        )
                         "me" -> MeScreen(onSignOut = onSignOut, onOpenAdmin = { showAdmin = true })
                     }
                 }

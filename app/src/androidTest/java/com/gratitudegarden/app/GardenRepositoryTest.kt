@@ -281,6 +281,25 @@ class GardenRepositoryTest {
     }
 
     @Test
+    fun aDayShowsOnlyItsOwnLiveEntriesOldestFirst() = runBlocking {
+        val today = LocalDate.now()
+        fake.addEntries(3)
+        fun add(id: String, day: LocalDate, micros: Long) {
+            val t = FakeSupabase.stamp(micros)
+            fake.entries += FakeSupabase.Entry(id = id, text = id, entryDate = day.toString(), createdAt = t, updatedAt = t)
+        }
+        add("yesterday", today.minusDays(1), 10)
+        // Dated ahead by a zone change: the Journal lists it under today, so the day view does too.
+        add("ahead", today.plusDays(1), 11)
+        fake.deleteElsewhere("e00001")
+        signIn()
+
+        assertEquals(listOf("e00000", "e00002", "ahead"), repo.observeEntriesOn(today).first().map { it.id })
+        assertEquals(listOf("yesterday"), repo.observeEntriesOn(today.minusDays(1)).first().map { it.id })
+        assertEquals(emptyList<String>(), repo.observeEntriesOn(today.minusDays(2)).first().map { it.id })
+    }
+
+    @Test
     fun aPlantDugUpElsewhereDisappears() = runBlocking {
         signIn()
         fake.plantIds.remove("p2")

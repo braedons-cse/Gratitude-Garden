@@ -98,6 +98,13 @@ interface EntryDao {
     )
     fun observeNewest(userId: String, limit: Int): Flow<List<EntryEntity>>
 
+    /** Live entries dated [from] to [to] (`yyyy-MM-dd`, both included), oldest first. */
+    @Query(
+        "SELECT * FROM gratitude_entries WHERE userId = :userId AND deletedAt IS NULL " +
+            "AND entryDate BETWEEN :from AND :to ORDER BY createdAtMicros"
+    )
+    fun observeBetween(userId: String, from: String, to: String): Flow<List<EntryEntity>>
+
     /** Distinct days with a live entry on or after [since] (`yyyy-MM-dd`), for the week strip. */
     @Query(
         "SELECT DISTINCT entryDate FROM gratitude_entries " +

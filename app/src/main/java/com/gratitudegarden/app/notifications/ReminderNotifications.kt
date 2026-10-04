@@ -14,6 +14,8 @@ import androidx.core.app.PendingIntentCompat
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.gratitudegarden.app.MainActivity
+import com.gratitudegarden.app.model.Prompts
+import java.time.LocalDate
 import kotlin.random.Random
 
 /** One reminder variant (notification title + body). */
@@ -107,7 +109,8 @@ object ReminderNotifications {
     }
 
     /**
-     * Build and post the daily reminder notification using [MESSAGES]`[index]`.
+     * Build and post the daily reminder notification using [MESSAGES]`[index]`, with
+     * today's question (the entry sheet's) under it when expanded and in the reply field.
      * Tapping it opens the app with the entry sheet up. [canReply] adds the inline reply,
      * which needs someone signed in to write for. Called from [ReminderReceiver] when the
      * alarm fires. Safe to call from a cold-started process — the channel is (re)created first.
@@ -116,15 +119,16 @@ object ReminderNotifications {
         if (!canPost(context)) return
 
         val message = MESSAGES[index.coerceIn(MESSAGES.indices)]
+        val prompt = Prompts.forDay(LocalDate.now())
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(message.title)
             .setContentText(message.body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message.body))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("${message.body}\n\n$prompt"))
             .setAutoCancel(true)
             .setContentIntent(writeIntent(context))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-        if (canReply) builder.addAction(replyAction(context))
+        if (canReply) builder.addAction(replyAction(context, prompt))
         builder.addAction(laterAction(context))
 
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
@@ -184,7 +188,7 @@ object ReminderNotifications {
 
     // RemoteInput fills the text into the intent, so this one PendingIntent must be mutable.
     // It is explicit (our own receiver), which is what makes mutable safe.
-    private fun replyAction(context: Context): NotificationCompat.Action {
+    private fun replyAction(context: Context, prompt: String): NotificationCompat.Action {
         val intent = Intent(context, ReplyReceiver::class.java).setAction(ReplyReceiver.ACTION_REPLY)
         val pending = PendingIntentCompat.getBroadcast(
             context,
@@ -194,7 +198,7 @@ object ReminderNotifications {
             true,
         )
         val input = RemoteInput.Builder(KEY_REPLY_TEXT)
-            .setLabel("Something you're grateful for…")
+            .setLabel(prompt)
             .build()
         return NotificationCompat.Action.Builder(0, "Plant a thought", pending)
             .addRemoteInput(input)

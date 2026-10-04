@@ -16,9 +16,11 @@ import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
 import com.gratitudegarden.app.ui.toUserMessage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -26,7 +28,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.time.LocalDate
 
-data class JournalSection(val label: String, val entries: List<GratitudeEntry>)
+/** [date] is the day the section is for, `yyyy-MM-dd`. */
+data class JournalSection(val date: String, val label: String, val entries: List<GratitudeEntry>)
 
 /** What an edit does to the entry's photo. */
 sealed interface PhotoChange {
@@ -49,6 +52,8 @@ data class JournalUiState(
     val entryDates: Set<String> = emptySet(),
     /** Days in the week strip that a streak freeze covered. */
     val frozenDates: Set<String> = emptySet(),
+    /** Entries that can still be written today, for the day view's "Write another". */
+    val thoughtsLeft: Int = 0,
     val error: String? = null,
 )
 
@@ -87,6 +92,8 @@ class JournalViewModel(
             copy(entryDates = dates.map { atMostToday(it) }.toSet())
         }
         showIn(_ui, repo.observeRecentFrozenDates()) { copy(frozenDates = it) }
+        val left = combine(repo.observeEntriesTodayCount(), repo.observeDailyCap()) { count, cap -> cap - count }
+        showIn(_ui, left) { copy(thoughtsLeft = it.coerceAtLeast(0)) }
         viewModelScope.launch { pull(force = false) }
     }
 
@@ -123,7 +130,7 @@ class JournalViewModel(
     private fun sectionsOf(entries: List<GratitudeEntry>): List<JournalSection> {
         val today = LocalDate.now()
         return entries.groupBy { atMostToday(it.entryDate) }.map { (date, items) ->
-            JournalSection(label = labelFor(date, today), entries = items)
+            JournalSection(date = date, label = labelFor(date, today), entries = items)
         }
     }
 
@@ -175,6 +182,9 @@ class JournalViewModel(
             }
         }
     }
+
+    /** One day's entries, oldest first, for the day view. */
+    fun entriesOn(day: LocalDate): Flow<List<GratitudeEntry>> = repo.observeEntriesOn(day)
 
     /** Turn a picked or captured image into the photo that would be saved with the entry. */
     suspend fun preparePhoto(uri: Uri): File = photos.prepare(uri)

@@ -45,6 +45,7 @@ shippable product.
   - [Home-screen widget and quick replies](#home-screen-widget-and-quick-replies)
   - [Entry photos](#entry-photos)
   - [Entry moods](#entry-moods)
+  - [Prompts, days and lists](#prompts-days-and-lists)
   - [Crash reports and the funnel](#crash-reports-and-the-funnel)
   - [Account deletion](#account-deletion)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
@@ -107,8 +108,10 @@ per unit of work.
   **done**: one per entry, from the gallery or the camera, added or changed later in Edit,
   and written offline like the text; see [Entry photos](#entry-photos)); a **mood** per
   entry (✅ **done**: optional, one of five from rough to great, set when writing or in
-  Edit, and it unlocks 1.5; see [Entry moods](#entry-moods)); rotating daily prompts for the blank-page problem; multiple
-  entries per day with a day-detail view; and lists/line breaks that survive a round trip.
+  Edit, and it unlocks 1.5; see [Entry moods](#entry-moods)); and (✅ **done**) a daily
+  question for the blank-page problem, a view of one day's entries, and lists and line
+  breaks that survive a round trip; see [Prompts, days and lists](#prompts-days-and-lists).
+  **1.4 is complete.**
 - **1.5 Insights / "your year in gratitude" — M.** Once entries carry mood and timestamps:
   themes over time, mood against streak length, "on this day last year", and a shareable
   year-in-review card — also the cheapest organic acquisition channel available to us.
@@ -162,7 +165,7 @@ per unit of work.
 2. **The structural bet:** 1.1 offline/Room. Everything after is easier with it in place;
    everything built before it has to be retrofitted.
 3. **The retention loop:** 1.3 streak freeze (✅ done), 1.2 widget
-   (✅ done), 1.4 photos + mood (✅ both done).
+   (✅ done), 1.4 entry experience (✅ done).
 4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting (✅ done), 0.7 listing assets → ship
    to a closed track and get ~20 real testers before public release.
 5. **Post-launch:** 1.5 insights, 2.1 privacy features, 2.3 monetization, 2.4 localization.
@@ -756,6 +759,36 @@ quick reply saves with none.
   overload would stay reachable through PostgREST).
 - **Accessibility.** The five faces are a radio group: each reads "Mood: good", with its
   selected state. In the Journal the face and word read as one phrase, "Feeling good".
+
+### Prompts, days and lists
+
+Roadmap 1.4, the last slice. All of it is on the device: no migration and no RPC change.
+
+- **A question a day** (`model/Prompts.kt`). The entry sheet shows one of 30 questions
+  above the text ("Who helped you today, even in a small way?"), and **Another** steps to
+  the next. The question is picked by date, so the reminder shows the same one: under its
+  text when expanded, and as the label of its reply field. It's only a nudge. It isn't saved
+  with the entry and pays nothing, so leaving it unanswered costs nothing.
+- **One day at a time.** Several entries a day already worked (the server's daily cap,
+  10 by default, with the first paying more XP), and the Journal already grouped them by
+  day. Tapping a day's heading, or a day with a check in the week strip, now opens that day
+  by itself, oldest thought first, with each entry's mood and photo. Entries open the same
+  Edit / Delete menu as in the list. For today, while thoughts are left, **Write another**
+  goes to the Garden with the entry sheet open. Today also takes an entry the server dated
+  tomorrow after a zone change, as the list does.
+- **Lists stay plain text** (`util/EntryLists.kt`). A line starting `• `, `- ` or `* ` is a
+  list item, shown as a bullet with a hanging indent; the text itself is never rewritten, so
+  an entry reads the same in the reply notification, a future export or the admin
+  dashboard. Enter at the end of an item starts the next one, Enter on an empty item ends
+  the list, and the **• List** button under the field makes the current line an item or a
+  plain line again. Newlines already survived the trip: Postgres's `trim()` only strips
+  spaces, and the reward counts collapsed whitespace, so lines earn nothing extra.
+- **The text box grows** from 96 dp to 240 dp with what's written, then scrolls, in both
+  the entry sheet and Edit; the whole box takes a tap.
+- **A scrub fix found on the way.** `scrub()` cut a quoted row at the first line starting
+  `URL:`. A multi-line entry can have one of its own, and the rest of its text would have
+  gone to Sentry. It now cuts to the last one, which is supabase-kt's. `ScrubTest` has the
+  case.
 
 ### Crash reports and the funnel
 

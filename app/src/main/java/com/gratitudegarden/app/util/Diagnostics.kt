@@ -66,7 +66,9 @@ object Diagnostics {
 // line of their own.
 private val HEADERS_LINE = Regex("""(?m)^\s*Headers:.*$\n?""")
 // Postgres check failures quote the rejected row, and the row can run over several lines.
-private val FAILING_ROW = Regex("""(?s)(Failing row contains ).*?(?=\nURL:|\z)""")
+// Greedy, so it runs to the *last* `URL:` line, the one supabase-kt adds: journal text can
+// have a line of its own that starts with `URL:`. With no URL line, it runs to the end.
+private val FAILING_ROW = Regex("""(?s)Failing row contains .*(?=\nURL:)|Failing row contains .*""")
 // Unique and foreign-key failures quote the key's value.
 private val KEY_VALUE = Regex("""(?m)(Key \([^)]*\)=).*$""")
 private val JWT = Regex("""eyJ[\w-]+\.[\w-]+\.[\w-]*""")
@@ -80,7 +82,7 @@ private val EMAIL = Regex("""[\w.+-]+@[\w-]+\.[\w.-]+""")
 /** [text] with anything that could identify someone or quote their journal taken out. */
 internal fun scrub(text: String?): String? = text
     ?.replace(HEADERS_LINE, "")
-    ?.replace(FAILING_ROW, "$1[row]")
+    ?.replace(FAILING_ROW, "Failing row contains [row]")
     ?.replace(KEY_VALUE, "$1[value]")
     ?.replace(JWT, "[token]")
     ?.replace(BEARER, "$1[token]")

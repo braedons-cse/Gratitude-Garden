@@ -48,6 +48,25 @@ class ScrubTest {
     }
 
     @Test
+    fun aRowWhoseTextHasItsOwnUrlLineIsStillNotQuoted() {
+        val message = "new row for relation \"gratitude_entries\" violates check constraint\n" +
+            "Failing row contains ($uid, Grateful for\nURL: my blog\nand my sister, 2026-10-01).\n" +
+            "URL: https://abc.supabase.co/rest/v1/rpc/edit_gratitude_entry\n" +
+            "Http Method: POST"
+        val out = scrub(message)!!
+        assertTrue("Failing row contains [row]\nURL: https://abc.supabase.co/rest/v1/rpc/edit_gratitude_entry" in out)
+        assertTrue("Http Method: POST" in out)
+        assertFalse("blog" in out)
+        assertFalse("sister" in out)
+    }
+
+    @Test
+    fun aRowWithNoUrlLineIsCutToTheEnd() {
+        val out = scrub("violates check constraint\nFailing row contains (x, a\nprivate line).")!!
+        assertEquals("violates check constraint\nFailing row contains [row]", out)
+    }
+
+    @Test
     fun keyValuesAreNotQuoted() {
         val out = scrub("duplicate key value violates unique constraint\nKey (email)=(someone@example.com) already exists.")!!
         assertEquals("duplicate key value violates unique constraint\nKey (email)=[value]", out)

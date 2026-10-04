@@ -45,8 +45,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,7 +64,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -75,13 +72,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -131,6 +126,12 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import com.gratitudegarden.app.model.Prompts
+import com.gratitudegarden.app.ui.components.EntryTextField
+import java.time.LocalDate
 
 private val SoilTop = Color(0xFFA48560)
 private val SoilBottom = Color(0xFF8B6F47)
@@ -968,9 +969,12 @@ internal fun NewEntrySheet(
     preparePhoto: suspend (Uri) -> File,
 ) {
     val context = LocalContext.current
-    var text by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf(TextFieldValue()) }
     var mood by remember { mutableStateOf<Int?>(null) }
     val photo = rememberPhotoDraft(preparePhoto)
+    // Today's question, and how many times "Another" has been tapped past it.
+    val today = remember { LocalDate.now() }
+    var promptOffset by remember { mutableIntStateOf(0) }
     var isVoice by remember { mutableStateOf(false) }
     var listening by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
@@ -997,7 +1001,7 @@ internal fun NewEntrySheet(
                     .getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull().orEmpty()
                 if (phrase.isNotBlank()) {
-                    text = phrase
+                    text = TextFieldValue(phrase, TextRange(phrase.length))
                     isVoice = true
                 }
                 listening = false
@@ -1098,32 +1102,45 @@ internal fun NewEntrySheet(
 
             Spacer(Modifier.height(16.dp))
 
-            // Editable text (voice result lands here; also typed fallback)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightInThought()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
-                    .padding(14.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (text.isEmpty()) {
-                    Text(
-                        "Something you're grateful for…",
-                        fontFamily = Nunito,
-                        fontSize = 15.sp,
-                        color = GgInkMuted,
-                    )
-                }
-                BasicTextField(
-                    value = text,
-                    onValueChange = { text = it; isVoice = false },
-                    textStyle = TextStyle(fontFamily = Nunito, fontSize = 15.sp, color = GgInk),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                    cursorBrush = SolidColor(GgPrimary),
-                    modifier = Modifier.fillMaxWidth().testTag("new_entry_text_field"),
+                Text(
+                    Prompts.forDay(today, promptOffset),
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = GgPrimaryDeep,
+                    modifier = Modifier.weight(1f).testTag("entry_prompt"),
+                )
+                Text(
+                    "Another",
+                    fontFamily = Nunito,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.5.sp,
+                    color = GgInkMuted,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable(onClickLabel = "Show another question") { promptOffset++ }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                 )
             }
+            Spacer(Modifier.height(8.dp))
+
+            // Editable text (voice result lands here; also typed fallback)
+            EntryTextField(
+                value = text,
+                onValueChange = {
+                    if (it.text != text.text) isVoice = false
+                    text = it
+                },
+                placeholder = "Something you're grateful for…",
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !submitting,
+                testTag = "new_entry_text_field",
+            )
 
             Spacer(Modifier.height(14.dp))
             MoodPicker(
@@ -1147,9 +1164,9 @@ internal fun NewEntrySheet(
 
             PillButton(
                 text = if (submitting) "Planting…" else "Plant it",
-                onClick = { onSubmit(text, isVoice, mood, photo.handOver()) },
+                onClick = { onSubmit(text.text, isVoice, mood, photo.handOver()) },
                 // Text is still what makes an entry; a mood or a photo only goes with one.
-                enabled = text.isNotBlank() && !submitting && !photo.preparing,
+                enabled = text.text.isNotBlank() && !submitting && !photo.preparing,
                 modifier = Modifier.fillMaxWidth(),
                 testTag = "plant_it_button",
             )
@@ -1180,8 +1197,6 @@ internal fun NewEntrySheet(
         )
     }
 }
-
-private fun Modifier.heightInThought(): Modifier = this.height(96.dp)
 
 // Popup shown when the mic is tapped but the permission is blocked — offers a
 // path back to re-enable it (or to just type instead).

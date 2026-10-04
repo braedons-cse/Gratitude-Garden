@@ -434,6 +434,17 @@ class GardenRepository(
             db.entryDao().observeNewest(uid, limit).map { rows -> rows.map { it.toRow() } }
         }
 
+    /**
+     * One day's live entries, oldest first, for the Journal's day view. Today also takes an
+     * entry the server dated tomorrow, as the Journal lists it under today (the server never
+     * dates an entry before the previous one, so a zone change can push it a day ahead).
+     */
+    fun observeEntriesOn(day: LocalDate): Flow<List<GratitudeEntry>> =
+        ofUser(emptyList()) { uid ->
+            val to = if (day == LocalDate.now()) "9999-12-31" else day.toString()
+            db.entryDao().observeBetween(uid, day.toString(), to).map { rows -> rows.map { it.toRow() } }
+        }
+
     /** The entry dates (`yyyy-MM-dd`) within the last [days] days, for the Journal's week strip. */
     fun observeRecentEntryDates(days: Int = 7): Flow<Set<String>> =
         ofUser(emptySet()) { uid ->
