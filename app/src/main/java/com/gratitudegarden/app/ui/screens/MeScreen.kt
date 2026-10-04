@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +74,7 @@ import com.gratitudegarden.app.ui.admin.AdminTools
 import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
 import com.gratitudegarden.app.ui.me.MeViewModel
+import com.gratitudegarden.app.util.PRIVACY_POLICY_URL
 import com.gratitudegarden.app.util.findActivity
 import com.gratitudegarden.app.util.formatTime
 import com.gratitudegarden.app.ui.sprites.CoinIcon
@@ -99,6 +101,7 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     val vm: MeViewModel = viewModel(factory = MeViewModel.Factory)
     val ui by vm.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
 
     // 0 = hidden, 1 = "are you sure" warning, 2 = password confirmation.
     var deleteStep by remember { mutableStateOf(0) }
@@ -298,6 +301,22 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
                 .clip(RoundedCornerShape(percent = 50))
                 .clickable { deleteStep = 1 }
                 .padding(vertical = 10.dp),
+        )
+
+        // Play expects the policy to be reachable from inside the app, not only the listing.
+        Text(
+            text = "Privacy policy",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            color = GgInkMuted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(percent = 50))
+                .clickable { uriHandler.openUri(PRIVACY_POLICY_URL) }
+                .padding(vertical = 8.dp)
+                .testTag("me_privacy_policy"),
         )
         Spacer(Modifier.height(12.dp))
     }

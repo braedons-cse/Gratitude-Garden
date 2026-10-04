@@ -32,8 +32,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,6 +57,7 @@ import com.gratitudegarden.app.ui.theme.GgInkSoft
 import com.gratitudegarden.app.ui.theme.GgMoss
 import com.gratitudegarden.app.ui.theme.GgPrimary
 import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
+import com.gratitudegarden.app.util.PRIVACY_POLICY_URL
 import com.gratitudegarden.app.util.passwordProblem
 
 private val ErrorRed = Color(0xFFB3261E)
@@ -65,7 +72,8 @@ fun SignUpScreen(
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var consent by remember { mutableStateOf(true) }
+    // Unticked: consent has to be something the user does, not something they fail to undo.
+    var consent by remember { mutableStateOf(false) }
 
     // Mirrors the Supabase Auth password policy so the rule is enforced where the user can
     // see it. null once the password is acceptable. See util/PasswordRules.kt.
@@ -187,14 +195,29 @@ fun SignUpScreen(
                     .size(20.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(if (consent) GgPrimary else Color.White)
-                    .semantics { contentDescription = "Accept the terms and privacy policy" }
+                    .semantics { contentDescription = "I've read the privacy policy" }
                     .toggleable(value = consent, role = Role.Checkbox) { consent = it },
                 contentAlignment = Alignment.Center,
             ) {
                 if (consent) GgIcon(name = GgIconName.Check, color = GgBgCream, size = 14.dp)
             }
             Text(
-                text = "I'm cool with the terms and privacy policy.",
+                text = buildAnnotatedString {
+                    append("I've read the ")
+                    withLink(
+                        LinkAnnotation.Url(
+                            PRIVACY_POLICY_URL,
+                            TextLinkStyles(
+                                SpanStyle(
+                                    color = GgPrimaryDeep,
+                                    fontWeight = FontWeight.Bold,
+                                    textDecoration = TextDecoration.Underline,
+                                ),
+                            ),
+                        ),
+                    ) { append("privacy policy") }
+                    append(".")
+                },
                 fontFamily = Nunito,
                 fontSize = 12.5.sp,
                 color = GgInkSoft,
