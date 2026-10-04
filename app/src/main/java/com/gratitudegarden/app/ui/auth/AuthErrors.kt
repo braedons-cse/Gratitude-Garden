@@ -2,6 +2,7 @@ package com.gratitudegarden.app.ui.auth
 
 import com.gratitudegarden.app.ui.OFFLINE_MESSAGE
 import com.gratitudegarden.app.ui.isOffline
+import com.gratitudegarden.app.util.BreachedPasswordException
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 import io.github.jan.supabase.auth.exception.AuthRestException
 
@@ -10,11 +11,16 @@ import io.github.jan.supabase.auth.exception.AuthRestException
  * supabase-kt folds the request URL and headers into it, which is noise for a user and
  * nothing a store reviewer should see on a login form.
  */
-fun authErrorMessage(e: Throwable, fallback: String): String = authErrorMessage(
-    code = (e as? AuthRestException)?.errorCode,
-    offline = isOffline(e),
-    fallback = fallback,
-)
+fun authErrorMessage(e: Throwable, fallback: String): String =
+    if (e is BreachedPasswordException) BREACHED_PASSWORD_MESSAGE
+    else authErrorMessage(
+        code = (e as? AuthRestException)?.errorCode,
+        offline = isOffline(e),
+        fallback = fallback,
+    )
+
+internal const val BREACHED_PASSWORD_MESSAGE =
+    "That password has turned up in a known data breach, so it isn't safe to use. Please pick another."
 
 /** The mapping itself, split out so it can be tested without building an HTTP response. */
 internal fun authErrorMessage(code: AuthErrorCode?, offline: Boolean, fallback: String): String = when {

@@ -1,6 +1,8 @@
 package com.gratitudegarden.app
 
+import com.gratitudegarden.app.ui.auth.BREACHED_PASSWORD_MESSAGE
 import com.gratitudegarden.app.ui.auth.authErrorMessage
+import com.gratitudegarden.app.util.BreachedPasswordException
 import io.github.jan.supabase.auth.exception.AuthErrorCode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -49,5 +51,10 @@ class AuthErrorMessageTest {
             "We can't reach the garden right now. Check your connection and try again.",
             authErrorMessage(IOException("timeout"), fallback),
         )
+    }
+
+    @Test
+    fun breachedPasswordGetsItsOwnMessage() {
+        assertEquals(BREACHED_PASSWORD_MESSAGE, authErrorMessage(BreachedPasswordException(), fallback))
     }
 }

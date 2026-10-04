@@ -7,6 +7,7 @@ import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.PhotoPreparer
 import com.gratitudegarden.app.data.WorkManagerOutboxScheduler
 import com.gratitudegarden.app.data.local.GardenDatabase
+import com.gratitudegarden.app.util.PwnedPasswords
 import com.gratitudegarden.app.widget.WidgetSync
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.Auth
@@ -14,6 +15,8 @@ import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.serializer.KotlinXSerializer
 import io.github.jan.supabase.storage.Storage
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -56,6 +59,9 @@ class AppContainer(private val context: Context) {
 
     // Lazy, and only touched once a widget exists (see WidgetSync).
     val widgetSync: WidgetSync by lazy { WidgetSync(context, gardenRepository) }
+
+    // Its own small client: only sign-up uses it, and it talks to Have I Been Pwned, not Supabase.
+    val pwnedPasswords: PwnedPasswords by lazy { PwnedPasswords(HttpClient(OkHttp)) }
 }
 
 /** Entry photos on the device. Must match the `photos/` exclusions in the backup rules. */

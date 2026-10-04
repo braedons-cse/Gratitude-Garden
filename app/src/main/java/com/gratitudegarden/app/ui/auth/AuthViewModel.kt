@@ -7,8 +7,11 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.gratitudegarden.app.data.AppSession
 import com.gratitudegarden.app.data.GardenRepository
+import com.gratitudegarden.app.ui.gardenApp
 import com.gratitudegarden.app.ui.repo
+import com.gratitudegarden.app.util.BreachedPasswordException
 import com.gratitudegarden.app.util.LogTags
+import com.gratitudegarden.app.util.PwnedPasswords
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,7 +19,10 @@ import kotlinx.coroutines.launch
 
 data class AuthUiState(val loading: Boolean = false, val error: String? = null)
 
-class AuthViewModel(private val repo: GardenRepository) : ViewModel() {
+class AuthViewModel(
+    private val repo: GardenRepository,
+    private val pwnedPasswords: PwnedPasswords,
+) : ViewModel() {
 
     val session: StateFlow<AppSession> = repo.session
 
@@ -31,7 +37,11 @@ class AuthViewModel(private val repo: GardenRepository) : ViewModel() {
         launch("We couldn't log you in") { repo.signIn(email.trim(), password) }
 
     fun signUp(name: String, email: String, password: String) =
-        launch("We couldn't create your garden") { repo.signUp(email.trim(), password, name.trim()) }
+        launch("We couldn't create your garden") {
+            // null (the check couldn't run) lets sign-up go ahead; see PwnedPasswords.
+            if ((pwnedPasswords.timesSeen(password) ?: 0) > 0) throw BreachedPasswordException()
+            repo.signUp(email.trim(), password, name.trim())
+        }
 
     fun signOut() = launch("Couldn't sign out") { repo.signOut() }
 
@@ -49,6 +59,8 @@ class AuthViewModel(private val repo: GardenRepository) : ViewModel() {
     }
 
     companion object {
-        val Factory = viewModelFactory { initializer { AuthViewModel(repo()) } }
+        val Factory = viewModelFactory {
+            initializer { AuthViewModel(repo(), gardenApp().container.pwnedPasswords) }
+        }
     }
 }
