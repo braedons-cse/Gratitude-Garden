@@ -48,6 +48,7 @@ shippable product.
   - [Prompts, days and lists](#prompts-days-and-lists)
   - [Crash reports and the funnel](#crash-reports-and-the-funnel)
   - [Account deletion](#account-deletion)
+  - [Privacy policy and Data Safety](#privacy-policy-and-data-safety)
   - [Admin CRUD dashboard](#admin-crud-dashboard)
 - [Setup & build](#setup--build)
 - [Run on an emulator](#run-on-an-emulator)
@@ -69,8 +70,8 @@ but disqualifying on a public store listing.
 | 0.1 | **Rebrand off the course namespace** | M | ✅ **Done** — `com.cse5236.gratitudegarden` → `com.gratitudegarden.app`, across `namespace`, `applicationId`, all 48 source files, and the reminder broadcast action. The application ID is **permanent once published**, which is why this landed before any feature work. |
 | 0.2 | **Signing, minification, real release build** | S/M | ✅ **Done** — R8 + resource shrinking on, release signed with an upload key kept outside the repo, and the signed build walked end to end on an emulator (signup, entries, planting, watering, journal, reminders, sign-out) with no crashes. No hand-written keep rules were needed. Play App Signing enrollment happens at first upload. *Original scope:* No signing config existed and R8 was off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
 | 0.3 | **Get the admin dashboard out of the consumer build** | S | ✅ **Done** — a `staging` flavor holds all admin code; the `consumer` build compiles an empty stub, and an admin account signed into it sees no dashboard. *Original scope:* `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
-| 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, photos, microphone, notifications, and crash logs and diagnostics (Sentry, since 0.6). The deletion *backend* already exists (`deleteOwnAccount` + RPCs); the **publicly reachable web page** for deletion requests and the hosted policy do not. |
-| 0.5 | **Harden secrets and key handling** | S | ✅ **Done** — two coin-minting holes closed, then the policy audit found three more (a privilege escalation among them) and closed those too; see [Server-authoritative economy](#server-authoritative-economy) and [Client write surface](#client-write-surface). |
+| 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | ✅ **Built** — the policy and a self-serve deletion page live in `site/`, published to GitHub Pages; the Play Console answers are in `docs/play-data-safety.md`; sign-up links the policy and no longer pre-ticks consent; deleting an entry now erases its words on the server. Contact and developer name are placeholders until the developer account exists. See [Privacy policy and Data Safety](#privacy-policy-and-data-safety). *Original scope:* Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, photos, microphone, notifications, and crash logs. The deletion backend existed; the public web page and the hosted policy did not. |
+| 0.5 | **Harden secrets and key handling** | S | ✅ **Done** — two coin-minting holes closed, then the policy audit found three more (a privilege escalation among them) and closed those too. Sign-up also checks new passwords against known breaches, the one piece of Supabase's leaked-password protection that needs Pro; see [Server-authoritative economy](#server-authoritative-economy) and [Client write surface](#client-write-surface). |
 | 0.6 | **Crash reporting and basic analytics** | S | ✅ **Done** — Sentry reports crashes, ANRs and unexpected caught errors, scrubbed on the device first; the first-week funnel is SQL over data we already store, so the app sends no analytics events; see [Crash reports and the funnel](#crash-reports-and-the-funnel). *Original scope:* Zero production visibility today. Without Crashlytics (or Sentry) plus Play Vitals we learn about an ANR from a one-star review. Add crash reporting and a small funnel (signup completed, first entry, day-2 return) *before* there are users to lose. |
 | 0.7 | **Store listing assets** | M | Feature graphic, 4–8 phone screenshots (ideally a short video), 512px icon, short + full description, content rating questionnaire. The launcher icon is still the Android Studio template — that alone reads as "unfinished" in search results. Design work, routinely underestimated. |
 | 0.8 | **Notification & alarm permission posture** | S | ✅ **Done** — `SCHEDULE_EXACT_ALARM` dropped; the reminder always uses the inexact, Doze-safe `setAndAllowWhileIdle`, and was watched firing and re-arming on an emulator. The WorkManager move was dropped on inspection: WorkManager declares `RECEIVE_BOOT_COMPLETED` itself (so it couldn't be removed), and Android defers its work hardest for rarely-opened apps, which are the users the nudge is for. *Original scope:* We held `SCHEDULE_EXACT_ALARM` with a documented inexact fallback. Play scrutinizes exact alarms and a daily journaling nudge is unlikely to qualify for an exemption. Move the reminder fully to WorkManager and drop the permission (and `RECEIVE_BOOT_COMPLETED` with it). Fewer sensitive permissions = smoother review. |
@@ -166,7 +167,7 @@ per unit of work.
    everything built before it has to be retrofitted.
 3. **The retention loop:** 1.3 streak freeze (✅ done), 1.2 widget
    (✅ done), 1.4 entry experience (✅ done).
-4. **Launch prep:** 0.4 privacy/Data Safety, 0.6 crash reporting (✅ done), 0.7 listing assets → ship
+4. **Launch prep:** 0.4 privacy/Data Safety (✅ built), 0.6 crash reporting (✅ done), 0.7 listing assets → ship
    to a closed track and get ~20 real testers before public release.
 5. **Post-launch:** 1.5 insights, 2.1 privacy features, 2.3 monetization, 2.4 localization.
 
@@ -874,8 +875,51 @@ wipes every associated row.
   `authenticated`. Consistent with the project's model: **no service-role key ever ships
   in the app.**
 
-> Play also requires a **web-based** account-deletion request URL for apps with in-app
-> accounts. The backend above satisfies the in-app half; the hosted page is roadmap 0.4.
+- **On the web, without the app:** Play requires a public deletion URL, so
+  `site/delete-account.html` does the same three steps in the browser with supabase-js:
+  sign in, delete the photos, `delete_current_user`. It keeps no session in the browser.
+  Someone who can't sign in (the app has no password reset yet) is sent to the contact
+  address instead. See [Privacy policy and Data Safety](#privacy-policy-and-data-safety).
+- **Deleted elsewhere, still on a phone:** an app signed in to an account deleted on the
+  web keeps showing its cached garden. Its token stays valid for up to an hour after the
+  user is gone, and offline-first deliberately keeps sessions alive. The page tells people
+  to log out of or uninstall the app; noticing the missing user is a possible follow-up.
+
+### Privacy policy and Data Safety
+
+Roadmap 0.4. Play needs a hosted privacy policy, a public account-deletion URL and an
+accurate Data Safety form.
+
+- **The pages** are plain HTML in `site/` (no build step) and are published by GitHub Pages
+  from the public `gratitude-garden-site` repo, because this repo is private. To publish a
+  change: `git subtree push --prefix site site main` (remote `site` →
+  `braedons-cse/gratitude-garden-site`). The URLs live in `util/Links.kt` and in Play Console.
+  - `privacy.html` is the policy. It is written from the code, so a change to what the app
+    collects, where it goes or how long it stays means changing the policy in the same PR.
+  - `delete-account.html` + `delete.js` delete an account without the app (see
+    [Account deletion](#account-deletion)). supabase-js is pinned and loaded with an
+    integrity hash; the URL and publishable key are the public ones the APK already holds.
+  - `{{DEVELOPER_NAME}}` and `{{CONTACT_EMAIL}}` are placeholders until the Play developer
+    account exists.
+- **The Data Safety answers** are in `docs/play-data-safety.md`, one row per question with
+  the reason, plus the App content answers and a pre-submission checklist.
+- **In the app:** sign-up says "I've read the privacy policy." with the policy linked, and
+  the box starts unticked (it used to come pre-ticked, which isn't consent). The Me screen
+  links the policy under *Delete account*.
+- **Deleting an entry erases its words.** `delete_gratitude_entry` used to only stamp
+  `deleted_at`, so the text and mood stayed on the server until the account went. It now
+  also sets the text to `(deleted)` and clears the mood
+  (`20261004120000_scrub_deleted_entries`). The row stays because the daily cap, the streak
+  and the funnel count deleted entries by day. It's a marker rather than null because
+  `entry_text` is `not null` and every released APK reads it as a `String`. The app never
+  shows a deleted row, and its sync leaves alone an entry with a pending or refused change,
+  so the marker never replaces text a device still holds.
+- **Breached passwords** (`util/PwnedPasswords.kt`). Supabase only checks Have I Been Pwned
+  on Pro, so sign-up does it: only the first 5 hex characters of the password's SHA-1 are
+  sent, and the match happens on the device. It fails open (offline, a 5 s timeout or an
+  error skips it), which is acceptable only because this check protects users from reusing
+  a leaked password; getting past it harms nobody else. The minimum length (8, with all
+  four character classes) is the Supabase Auth setting, mirrored by `util/PasswordRules.kt`.
 
 ### Admin CRUD dashboard
 
