@@ -70,7 +70,8 @@ Health info, and check whether the store's health-app policy then applies.
 
 ## Before submitting
 
-- Replace `{{DEVELOPER_NAME}}` and `{{CONTACT_EMAIL}}` in `site/` and publish again.
+- Check the developer name and contact on the pages (Braedon Salisbury,
+  GratitudeGardenApp@protonmail.com) match the Play developer account.
 - Confirm the Supabase project region in the dashboard (the policy says the United States;
   the database host resolves to AWS us-west-2).
 - Confirm Sentry's *Prevent Storing of IP Addresses* and the `$user.geo.**` scrubbing rule

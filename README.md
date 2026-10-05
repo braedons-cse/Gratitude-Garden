@@ -899,8 +899,8 @@ accurate Data Safety form.
   - `delete-account.html` + `delete.js` delete an account without the app (see
     [Account deletion](#account-deletion)). supabase-js is pinned and loaded with an
     integrity hash; the URL and publishable key are the public ones the APK already holds.
-  - `{{DEVELOPER_NAME}}` and `{{CONTACT_EMAIL}}` are placeholders until the Play developer
-    account exists.
+  - The policy names Braedon Salisbury as the developer and GratitudeGardenApp@protonmail.com
+    as the contact, on every page. Change them in all of `site/` together.
 - **The Data Safety answers** are in `docs/play-data-safety.md`, one row per question with
   the reason, plus the App content answers and a pre-submission checklist.
 - **In the app:** sign-up says "I've read the privacy policy." with the policy linked, and
