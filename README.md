@@ -891,9 +891,10 @@ Roadmap 0.4. Play needs a hosted privacy policy, a public account-deletion URL a
 accurate Data Safety form.
 
 - **The pages** are plain HTML in `site/` (no build step) and are published by GitHub Pages
-  from the public `gratitude-garden-site` repo, because this repo is private. To publish a
-  change: `git subtree push --prefix site site main` (remote `site` →
-  `braedons-cse/gratitude-garden-site`). The URLs live in `util/Links.kt` and in Play Console.
+  from the public `gratitude-garden-site` repo, because this repo is private. `site/` here is
+  the source: commit a change, then run `.\scripts\publish-site.ps1`, which copies it over
+  the public repo and pushes. Edit here, not on GitHub; the script refuses to publish over
+  a commit it didn't make (see its help). The URLs live in `util/Links.kt` and in Play Console.
   - `privacy.html` is the policy. It is written from the code, so a change to what the app
     collects, where it goes or how long it stays means changing the policy in the same PR.
   - `delete-account.html` + `delete.js` delete an account without the app (see
