@@ -30,7 +30,7 @@ $ErrorActionPreference = 'Stop'
 $PublishPrefix = 'Publish site/ from Gratitude-Garden'
 $RemoteUrl = 'https://github.com/braedons-cse/gratitude-garden-site.git'
 
-function Git {
+function Invoke-Git {
     & git @args
     if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed" }
 }
@@ -44,9 +44,9 @@ if (& git status --porcelain -- site) {
 }
 
 if (-not (& git remote | Where-Object { $_ -eq 'site' })) {
-    Git remote add site $RemoteUrl
+    Invoke-Git remote add site $RemoteUrl
 }
-Git fetch -q site main
+Invoke-Git fetch -q site main
 
 $head = (& git log -1 --format=%s site/main).Trim()
 if (-not $head.StartsWith($PublishPrefix) -and -not $RemoteEditsMerged) {
@@ -58,23 +58,23 @@ if (-not $head.StartsWith($PublishPrefix) -and -not $RemoteEditsMerged) {
 
 $source = (& git rev-parse --short HEAD).Trim()
 $work = Join-Path ([IO.Path]::GetTempPath()) ("gg-site-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
-Git worktree add -q --detach $work site/main
+Invoke-Git worktree add -q --detach $work site/main
 try {
     # Mirror site/: anything deleted here is deleted there too.
     Get-ChildItem -Force $work | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
     Get-ChildItem -Force (Join-Path $root 'site') | Copy-Item -Destination $work -Recurse -Force
 
-    Git -C $work add -A
+    Invoke-Git -C $work add -A
     & git -C $work diff --cached --quiet
     if ($LASTEXITCODE -eq 0) {
         Write-Host 'The public site already matches site/. Nothing to publish.'
     } else {
         & git -C $work diff --cached --stat
-        Git -C $work commit -q -m "$PublishPrefix $source"
-        Git -C $work push -q site HEAD:main
+        Invoke-Git -C $work commit -q -m "$PublishPrefix $source"
+        Invoke-Git -C $work push -q site HEAD:main
         Write-Host "Published site/ from $source. GitHub Pages updates within a minute or two:"
         Write-Host '  https://braedons-cse.github.io/gratitude-garden-site/'
     }
 } finally {
-    Git worktree remove --force $work
+    Invoke-Git worktree remove --force $work
 }
