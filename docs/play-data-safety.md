@@ -16,7 +16,7 @@ match `site/privacy.html` and the code; when either changes, change this too. Wr
 | --- | --- | --- |
 | Does your app collect or share any of the required user data types? | **Yes** | Account, journal, photos, crash data. |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | Supabase and Sentry are HTTPS only; target SDK 36 blocks cleartext and there is no `networkSecurityConfig` opting back in. |
-| Which account creation methods does your app support? | **Username and password** (email + password) | The Google / Apple buttons on the login screen are stubs and sign in nobody. Remove them, or update this, before submitting. |
+| Which account creation methods does your app support? | **Username and password** (email + password) | The only sign-in. When Google sign-in lands (roadmap 0.9), add *OAuth* and update the policy. |
 | Account deletion URL | the deletion URL above | Sign in, type DELETE, gone. |
 | Do you provide a way for users to request that some or all of their data is deleted, without deleting their account? | **Yes** | Entries (text, mood, photo) can be deleted one by one in the app. |
 
@@ -78,4 +78,39 @@ Health info, and check whether the store's health-app policy then applies.
   are on in the production project (README → Crash reports and the funnel).
 - Delete or demote `TestAdmin`. The policy says we don't browse journals; an admin account
   anyone could sign in to undermines that.
-- Remove or wire up the Google / Apple buttons and "Forgot password?" on the login screen.
+- Create a plain (non-admin) account for reviewers, write a few entries in it, and give its
+  email and password under *App access*.
+
+## Setting up Play Console
+
+The steps from no account to a closed test, as of October 2026. Play changes the details,
+so when a screen disagrees with this, believe the screen and fix this file.
+
+1. **Developer account** at play.google.com/console. Pick a **personal** account (an
+   organization account needs a D-U-N-S number). There's a one-time $25 fee and identity
+   verification, which can take a few days. Use GratitudeGardenApp@protonmail.com as the
+   contact email shown to users; it's the address the policy gives.
+2. **Create the app**: name *Gratitude Garden*, default language English, type *App*, *Free*,
+   and accept the declarations. Free can't later become paid; in-app purchases (2.3) stay
+   possible.
+3. **App content** (Policy → App content). Answer each from the tables above:
+   1. Privacy policy: the policy URL.
+   2. Ads: no.
+   3. App access: everything needs sign-in, so add the reviewer account.
+   4. Content rating: the questionnaire, with category *Utility, productivity, communication
+      or other*.
+   5. Target audience: 13 and over.
+   6. Data safety: the tables at the top of this file.
+   7. The remaining declarations (government, financial features, health, news): none apply.
+4. **Store listing**: name, short and full description, icon, feature graphic and
+   screenshots. This is roadmap 0.7; Play won't send a release to review without it.
+5. **First upload to internal testing**:
+   - Build a signed AAB (README → Setup & build) and upload it.
+   - Accept **Play App Signing** when Console offers it. Play then holds the app signing key
+     and our upload key only proves who uploaded the build.
+   - Keep that build's `mapping.txt`.
+   - Add yourself as a tester and install from the opt-in link to check the Play build.
+6. **Closed test before production**: new personal accounts must run a closed test with
+   **at least 12 testers opted in for 14 days in a row** before they can apply for
+   production access. It's the "~20 real testers" step in the roadmap sequencing, so start
+   recruiting before the build is ready.
