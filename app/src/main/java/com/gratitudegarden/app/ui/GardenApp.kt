@@ -93,7 +93,6 @@ private fun AuthNav(authVm: AuthViewModel) {
             LoginScreen(
                 onLogIn = authVm::signIn,
                 onSignUp = { authVm.clearError(); nav.navigate("signup") },
-                onForgotPassword = {},
                 loading = ui.loading,
                 error = ui.error,
             )

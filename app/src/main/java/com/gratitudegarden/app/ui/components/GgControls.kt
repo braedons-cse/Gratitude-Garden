@@ -8,14 +8,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,7 +42,6 @@ import com.gratitudegarden.app.ui.sprites.GgIcon
 import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.theme.Nunito
 import com.gratitudegarden.app.ui.theme.GgBgCream
-import com.gratitudegarden.app.ui.theme.GgBgSage
 import com.gratitudegarden.app.ui.theme.GgInk
 import com.gratitudegarden.app.ui.theme.GgInkMuted
 import com.gratitudegarden.app.ui.theme.GgInkSoft
@@ -204,37 +201,5 @@ fun PillButton(
                 color = if (primary) GgBgCream else GgInk,
             )
         }
-    }
-}
-
-@Composable
-fun RowScope.SocialButton(label: String, mark: String) {
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        modifier = Modifier
-            .weight(1f)
-            .height(52.dp)
-            .clip(shape)
-            .background(Color.White)
-            .border(1.5.dp, GgMoss, shape),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier.size(22.dp).clip(CircleShape).background(GgBgSage),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (mark.isNotEmpty()) {
-                Text(
-                    text = mark,
-                    fontFamily = Nunito,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 13.sp,
-                    color = GgPrimaryDeep,
-                )
-            }
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(text = label, fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 14.5.sp, color = GgInk)
     }
 }

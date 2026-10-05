@@ -2,7 +2,6 @@ package com.gratitudegarden.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,16 +30,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gratitudegarden.app.ui.components.GgTextField
 import com.gratitudegarden.app.ui.components.PillButton
-import com.gratitudegarden.app.ui.components.SocialButton
 import com.gratitudegarden.app.ui.sprites.GgIconName
 import com.gratitudegarden.app.ui.sprites.PottedPlant
 import com.gratitudegarden.app.ui.theme.Caprasimo
 import com.gratitudegarden.app.ui.theme.GratitudeGardenTheme
 import com.gratitudegarden.app.ui.theme.Nunito
 import com.gratitudegarden.app.ui.theme.GgBgSage
-import com.gratitudegarden.app.ui.theme.GgInkMuted
 import com.gratitudegarden.app.ui.theme.GgInkSoft
-import com.gratitudegarden.app.ui.theme.GgMoss
 import com.gratitudegarden.app.ui.theme.GgPrimary
 import com.gratitudegarden.app.ui.theme.GgPrimaryDeep
 
@@ -49,7 +45,6 @@ private val ErrorRed = Color(0xFFB3261E)
 @Composable
 fun LoginScreen(
     onLogIn: (email: String, password: String) -> Unit = { _, _ -> },
-    onForgotPassword: () -> Unit = {},
     onSignUp: () -> Unit = {},
     loading: Boolean = false,
     error: String? = null,
@@ -110,19 +105,8 @@ fun LoginScreen(
             testTag = "login_password_field",
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 22.dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            Text(
-                text = "Forgot password?",
-                fontFamily = Nunito,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                color = GgPrimary,
-                modifier = Modifier.clickable(onClick = onForgotPassword),
-            )
-        }
+        // No "Forgot password?" until reset can actually send an email (roadmap 0.9).
+        Spacer(Modifier.height(24.dp))
 
         if (error != null) {
             Text(
@@ -142,28 +126,6 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             testTag = "login_button",
         )
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(Modifier.weight(1f).height(1.dp).background(GgMoss))
-            Text(
-                text = "OR",
-                fontFamily = Nunito,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-                letterSpacing = 0.5.sp,
-                color = GgInkMuted,
-            )
-            Box(Modifier.weight(1f).height(1.dp).background(GgMoss))
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SocialButton(label = "Google", mark = "G")
-            SocialButton(label = "Apple", mark = "")
-        }
 
         Spacer(Modifier.height(28.dp))
 
