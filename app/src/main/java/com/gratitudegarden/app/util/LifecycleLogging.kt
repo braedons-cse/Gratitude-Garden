@@ -17,7 +17,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
  * For a Navigation-Compose destination, [LocalLifecycleOwner] is that
  * destination's NavBackStackEntry, so navigating between screens produces real
  * per-screen lifecycle transitions — the declarative-UI equivalent of Fragment
- * lifecycles required by the checkpoint.
+ * lifecycles.
  */
 @Composable
 fun LogComposableLifecycle(tag: String) {

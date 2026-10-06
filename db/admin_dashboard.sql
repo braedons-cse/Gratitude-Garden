@@ -1,5 +1,5 @@
 -- ============================================================================
--- Checkpoint 4 — Admin CRUD Dashboard: Supabase schema + security changes
+-- Admin CRUD Dashboard: Supabase schema + security changes
 -- ----------------------------------------------------------------------------
 -- This file documents the SQL that backs the admin dashboard. It was applied to
 -- the live project (ref: wllqgdjkkhztbefdvvsf) via the Supabase migration
@@ -56,9 +56,8 @@ begin
   end loop;
 end $$;
 
--- 4) Grant the demo admin account. Change the UUID to whichever account should
---    be the grader-facing admin. (Currently: display_name 'Jeremy2'.)
+-- 4) Grant an admin account. Fill in the account's UUID and run by hand.
 --    To find ids:  select id, display_name from public.profiles;
-update public.profiles
-  set is_admin = true
-  where id = '3e3a4cdd-dd20-4721-9d8c-51f13ee9341b';
+-- update public.profiles
+--   set is_admin = true
+--   where id = '<uuid>';

@@ -5,15 +5,14 @@ gratitude entries, earn coins, and grow a personal garden. The backend is **Supa
 (Auth + Postgres/PostgREST), accessed from the app through the official Supabase Kotlin
 client using the **anon key** only.
 
-Gratitude Garden started as a course project for **CSE 5236** and is now being taken
-toward a public release on **Google Play**. The feature set below is complete and
-working; the [roadmap](#roadmap-to-google-play) is the plan for turning it into a
-shippable product.
+Gratitude Garden is being taken toward a public release on **Google Play**. The feature
+set below is complete and working; the [roadmap](#roadmap-to-google-play) is the plan for
+turning it into a shippable product.
 
 | | |
 | --- | --- |
 | Status | Feature-complete; pre-release |
-| `applicationId` | `com.gratitudegarden.app` — renamed off the course namespace in [0.1](#tier-0--release-blockers); **permanent once published** |
+| `applicationId` | `com.gratitudegarden.app` — set in [0.1](#tier-0--release-blockers); **permanent once published** |
 | Version | `versionCode 1` / `versionName 1.0` — never published |
 | Min / target SDK | 28 / 36 |
 | Release build | R8-minified, signed with the upload key; `consumer` flavor only ships to Play (see [0.2](#tier-0--release-blockers)) |
@@ -62,12 +61,12 @@ Sizes: **S** = a session, **M** = a few sessions, **L** = a multi-week arc.
 
 ### Tier 0 — Release blockers
 
-Cannot publish without these. Most are unglamorous, and several are fine for a class demo
+Cannot publish without these. Most are unglamorous, and several are fine for a prototype
 but disqualifying on a public store listing.
 
 | # | Item | Size | Why it blocks |
 | --- | --- | --- | --- |
-| 0.1 | **Rebrand off the course namespace** | M | ✅ **Done** — `com.cse5236.gratitudegarden` → `com.gratitudegarden.app`, across `namespace`, `applicationId`, all 48 source files, and the reminder broadcast action. The application ID is **permanent once published**, which is why this landed before any feature work. |
+| 0.1 | **Settle the permanent namespace** | M | ✅ **Done** — renamed to `com.gratitudegarden.app` across `namespace`, `applicationId`, all 48 source files, and the reminder broadcast action. The application ID is **permanent once published**, which is why this landed before any feature work. |
 | 0.2 | **Signing, minification, real release build** | S/M | ✅ **Done** — R8 + resource shrinking on, release signed with an upload key kept outside the repo, and the signed build walked end to end on an emulator (signup, entries, planting, watering, journal, reminders, sign-out) with no crashes. No hand-written keep rules were needed. Play App Signing enrollment happens at first upload. *Original scope:* No signing config existed and R8 was off. Needs an upload keystore (stored outside the repo and **backed up** — losing it means never updating the app again), Play App Signing enrollment, R8 with keep rules for the Supabase/Ktor/kotlinx-serialization models, and an AAB we actually install and walk before uploading. Serialization + R8 is the classic first-crash-in-production combo. |
 | 0.3 | **Get the admin dashboard out of the consumer build** | S | ✅ **Done** — a `staging` flavor holds all admin code; the `consumer` build compiles an empty stub, and an admin account signed into it sees no dashboard. *Original scope:* `AdminDashboardScreen.kt` is a generic CRUD editor over nine tables. RLS is the real guard, but shipping the client-side admin surface to every user is unnecessary attack surface and a reviewer red flag. Preference: a `staging` flavor, so we keep the tooling without shipping it. |
 | 0.4 | **Privacy policy, Data Safety form, account-deletion URL** | M | ✅ **Built** — the policy and a self-serve deletion page live in `site/`, published to GitHub Pages; the Play Console answers are in `docs/play-data-safety.md`; sign-up links the policy and no longer pre-ticks consent; deleting an entry now erases its words on the server; the login screen's dead Google, Apple and "Forgot password?" controls are gone (they return with 0.9). Left: enter the answers once the Play developer account exists (`docs/play-data-safety.md` → Setting up Play Console). See [Privacy policy and Data Safety](#privacy-policy-and-data-safety). *Original scope:* Play requires all three, and this app trips several categories at once: email + password, free-text personal reflections, photos, microphone, notifications, and crash logs. The deletion backend existed; the public web page and the hosted policy did not. |
@@ -963,7 +962,7 @@ Applied via the Supabase migration `admin_flag_and_policies`, checked into the r
 - `ALTER TABLE public.profiles ADD COLUMN is_admin boolean NOT NULL DEFAULT false`
 - `CREATE FUNCTION public.is_current_user_admin() … SECURITY DEFINER`
 - `<table>_admin_all` policies on all nine tables
-- A data update marking the demo admin account
+- A commented-out update showing how to grant an admin account
 
 #### Android pieces
 
@@ -998,9 +997,9 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
   soft delete is available by setting `deleted_at` instead of removing the row.
 
 <details>
-<summary>Course demo script (CSE 5236 checkpoint 4)</summary>
+<summary>Walkthrough script</summary>
 
-1. Show Supabase **Auth → Users** (authentication evidence) and the table schema.
+1. Show Supabase **Auth → Users** and the table schema.
 2. Sign into the app as the **admin** account.
 3. Open **Me** → the **Admin Dashboard** button is visible (hidden for non-admins).
 4. **Users tab → select a user**, then demonstrate CRUD per section:

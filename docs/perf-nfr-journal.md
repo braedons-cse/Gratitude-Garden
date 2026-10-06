@@ -108,10 +108,10 @@ Both the CPU (jank, median frame time) and memory (PSS, Java heap) improvements 
 
 Files live under `profiling/` (heap dumps are git-ignored — too large to commit):
 
-> These captures were taken before the 0.1 namespace rename, when the app was still
-> `com.cse5236.gratitudegarden`. The package name in the committed `.txt` dumps was
-> rewritten to `com.gratitudegarden.app` for consistency; the measurements themselves
-> are untouched. The `.hprof` files are git-ignored and still carry the old name.
+> These captures were taken before the 0.1 namespace rename. The package name in the
+> committed `.txt` dumps was rewritten to `com.gratitudegarden.app` for consistency; the
+> measurements themselves are untouched. The `.hprof` files are git-ignored and still
+> carry the old name.
 
 ```
 profiling/before/before-converted.hprof   ← open in Android Studio Profiler (memory)
@@ -123,7 +123,7 @@ profiling/after/after-meminfo.txt
 profiling/after/journal-after-bottom.png  ← shows pagination ("Loading more…") working
 ```
 
-**To produce the before/after memory screenshots for the report:** in Android Studio,
+**To produce the before/after memory screenshots:** in Android Studio,
 *File ▸ Open* each `*-converted.hprof` (or drag it into an editor tab). The heap-dump viewer
 opens; sort by **Retained Size** or search for `androidx.compose.ui.node.LayoutNode` and
 compare the instance counts between the two dumps — the "after" dump holds far fewer, which
