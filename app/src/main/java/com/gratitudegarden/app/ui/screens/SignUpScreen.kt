@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -188,18 +189,25 @@ fun SignUpScreen(
         Spacer(Modifier.height(16.dp))
 
         // Consent
-        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // A 48 dp target with the 20 dp box centred in it, which lines the box up with
+            // the fields' icons above.
             Box(
                 modifier = Modifier
-                    .padding(top = 1.dp)
-                    .size(20.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (consent) GgPrimary else Color.White)
+                    .minimumInteractiveComponentSize()
                     .semantics { contentDescription = "I've read the privacy policy" }
-                    .toggleable(value = consent, role = Role.Checkbox) { consent = it },
-                contentAlignment = Alignment.Center,
+                    .toggleable(value = consent, role = Role.Checkbox) { consent = it }
+                    .testTag("signup_consent"),
             ) {
-                if (consent) GgIcon(name = GgIconName.Check, color = GgBgCream, size = 14.dp)
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (consent) GgPrimary else Color.White),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (consent) GgIcon(name = GgIconName.Check, color = GgBgCream, size = 14.dp)
+                }
             }
             Text(
                 text = buildAnnotatedString {

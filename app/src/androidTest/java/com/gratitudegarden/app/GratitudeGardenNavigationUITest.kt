@@ -2,6 +2,7 @@ package com.gratitudegarden.app
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -51,6 +52,15 @@ class GratitudeGardenNavigationUITest {
         composeTestRule.onNodeWithText("Plant a seed").assertIsDisplayed()
         composeTestRule.onNodeWithTag("signup_name_field").assertIsDisplayed()
         composeTestRule.onNodeWithTag("signup_button").assertIsDisplayed()
+
+        // The consent box is small to look at but a full-size target to tap.
+        composeTestRule.onNodeWithTag("signup_consent", useUnmergedTree = true)
+            .performScrollTo()
+            .assertTouchHeightIsEqualTo(48.dp)
+            .assertTouchWidthIsEqualTo(48.dp)
+            .assertIsOff()
+            .performClick()
+            .assertIsOn()
 
         // 3. Navigate back to Login screen using the "Log in" link
         composeTestRule.onNodeWithTag("signup_to_login_link").performClick()
