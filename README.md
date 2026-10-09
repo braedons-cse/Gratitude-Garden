@@ -1093,6 +1093,10 @@ That boots the virtual device, installs the debug build, and opens the app — o
 from a cold machine to the login screen. It is safe to re-run: if an emulator is already
 running it is reused rather than starting a second one.
 
+Or double-click **`Start-Emulator.bat`** in the repo root, which runs the same script and
+keeps its window open so you can read the output. Flags pass through
+(`Start-Emulator.bat -Consumer`).
+
 The script finds the SDK itself (`ANDROID_HOME` → `ANDROID_SDK_ROOT` → `sdk.dir` from
 `local.properties`), so nothing needs to be on your `PATH`. It also points `JAVA_HOME` at
 Android Studio's bundled JBR 21 when `JAVA_HOME` is unset, because
