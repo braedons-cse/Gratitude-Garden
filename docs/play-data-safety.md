@@ -77,7 +77,11 @@ Health info, and check whether the store's health-app policy then applies.
 - Confirm Sentry's *Prevent Storing of IP Addresses* and the `$user.geo.**` scrubbing rule
   are on in the production project (README → Crash reports and the funnel).
 - Delete or demote `TestAdmin`. The policy says we don't browse journals; an admin account
-  anyone could sign in to undermines that.
+  anyone could sign in to undermines that. Decide too whether the developer's own account
+  stays an admin (`adminx@example.com` was demoted 2026-10-09). Then
+  `select id from profiles where is_admin` should list only what was meant to stay.
+- Delete the seeded `@example.com` test accounts. Delete their photos first (through the
+  app, or the Storage API): Supabase won't delete a user who still owns stored files.
 - Create a plain (non-admin) account for reviewers, write a few entries in it, and give its
   email and password under *App access*.
 
