@@ -31,7 +31,8 @@ sealed interface AppSession {
  * happen on every offline launch with an older token. Treating them as signed out would
  * put a user who is merely offline on the login form, with a journal they can't open. A
  * refresh token the server actually rejects makes the library clear the session, which
- * arrives here as `NotAuthenticated`.
+ * arrives here as `NotAuthenticated`; so does an account the repository finds deleted.
+ * Every `SignedOut` erases the device's copy (`GardenRepository`'s `init`).
  */
 fun appSessionFor(status: SessionStatus, storedUserId: String?): AppSession = when (status) {
     is SessionStatus.Authenticated -> status.session.userId()?.let { AppSession.SignedIn(it) } ?: AppSession.SignedOut

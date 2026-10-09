@@ -16,6 +16,8 @@ import com.gratitudegarden.app.util.Diagnostics
 import com.gratitudegarden.app.util.LogTags
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.exception.AuthErrorCode
+import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.exceptions.RestException
@@ -38,6 +40,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -369,19 +372,47 @@ class GardenRepository(
         clearLocal()
     }
 
+    private val clearLock = Mutex()
+
     /**
      * Drop everything stored on the device. It is one person's journal, possibly on a
      * shared phone. In-flight refreshes are cancelled first so none can write back into
      * the emptied tables.
+     *
+     * Runs on every sign-out, asked for or not (see `init`), so it can run twice for one;
+     * the lock keeps the two from overlapping. [onlyIfSignedOut] is for that watcher: by
+     * the time it gets the lock, someone may already have signed in again.
      */
-    private suspend fun clearLocal() {
-        outboxScheduler.cancel()
-        scope.coroutineContext.job.children.forEach { it.cancelAndJoin() }
-        lastFullRefreshAt = null
-        withContext(Dispatchers.IO) {
-            db.clearAllTables()
-            photoDir.deleteRecursively()
+    private suspend fun clearLocal(onlyIfSignedOut: Boolean = false) {
+        clearLock.withLock {
+            if (onlyIfSignedOut && session.value !is AppSession.SignedOut) return
+            outboxScheduler.cancel()
+            scope.coroutineContext.job.children.forEach { it.cancelAndJoin() }
+            lastFullRefreshAt = null
+            withContext(Dispatchers.IO) {
+                db.clearAllTables()
+                photoDir.deleteRecursively()
+            }
         }
+    }
+
+    /**
+     * Whether the server says this session's user is gone: the account was deleted on the
+     * web page or from another phone. The access token stays valid for up to an hour
+     * after that, so without asking, the app would keep showing the journal until the
+     * refresh was refused. Anything short of a definite answer (offline, a 5xx) is not
+     * "gone": a user who is merely offline must never be signed out.
+     */
+    private suspend fun accountIsGone(): Boolean = try {
+        client.auth.retrieveUserForCurrentSession(updateSession = false)
+        false
+    } catch (e: AuthRestException) {
+        e.errorCode == AuthErrorCode.UserNotFound || e.errorCode == AuthErrorCode.SessionNotFound
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(LogTags.APP_LOGIC, "Couldn't check the account", e)
+        false
     }
 
     /**
@@ -543,6 +574,20 @@ class GardenRepository(
                 }
             }
         }
+        // A sign-out nobody asked for (a refused refresh, or the account found gone) leaves
+        // the login form up but the journal still on the device. Erase it here, for every
+        // sign-out. A launch already signed out clears an empty database, which is cheap and
+        // also catches a process that died before clearing.
+        watchScope.launch {
+            session.filterIsInstance<AppSession.SignedOut>().collect {
+                try {
+                    clearLocal(onlyIfSignedOut = true)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w(LogTags.APP_LOGIC, "Couldn't erase after sign-out", e)
+                }
+            }
+        }
     }
 
     /**
@@ -568,6 +613,11 @@ class GardenRepository(
         val uid = currentUid() ?: return
         // Skipped rather than failed: the refresh below runs once the token is back.
         if (!hasToken()) return
+        if (accountIsGone()) {
+            // Signed out like a refused refresh would be; the watcher in `init` erases.
+            client.auth.clearSession()
+            return
+        }
         coroutineScope {
             launch { refreshAccount(uid) }
             launch { refreshGarden(uid) }

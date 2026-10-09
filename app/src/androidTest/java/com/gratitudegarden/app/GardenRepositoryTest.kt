@@ -346,6 +346,52 @@ class GardenRepositoryTest {
         assertEquals(0, db.itemDao().observeCatalog().first().size)
     }
 
+    /** Wait until the device's copy is gone: the erase after an unasked sign-out runs on its own. */
+    private suspend fun awaitErased() = withTimeout(5_000) {
+        while (db.entryDao().observeNewest(fake.userId, 100).first().isNotEmpty() || photoDir.exists()) delay(10)
+    }
+
+    @Test
+    fun aDeletedAccountSignsOutAndEmptiesTheDevice() = runBlocking {
+        fake.addEntries(3)
+        signIn()
+        repo.submitEntry("my own", voice = false, photo = staged())
+        assertTrue(photoDir.walk().any { it.isFile })
+
+        fake.userDeleted = true
+        repo.refreshAll(force = true)
+
+        assertEquals(AppSession.SignedOut, withTimeout(5_000) { repo.session.first { it !is AppSession.SignedIn } })
+        awaitErased()
+        assertNull(db.gardenDao().observeGarden(fake.userId).first())
+        assertNull(db.accountDao().observeWallet(fake.userId).first())
+        assertEquals(0, db.itemDao().observeCatalog().first().size)
+    }
+
+    @Test
+    fun aSignOutNobodyAskedForEmptiesTheDatabase() = runBlocking {
+        fake.addEntries(3)
+        signIn()
+
+        // What the library does when the server refuses the refresh token.
+        client.auth.clearSession()
+
+        awaitErased()
+        assertNull(db.accountDao().observeWallet(fake.userId).first())
+    }
+
+    @Test
+    fun anAccountCheckThatCantReachTheServerKeepsEverything() = runBlocking {
+        fake.addEntries(3)
+        signIn()
+
+        fake.offline = true
+        runCatching { repo.refreshAll(force = true) }
+
+        assertTrue(repo.session.value is AppSession.SignedIn)
+        assertEquals(3, db.entryDao().observeNewest(fake.userId, 100).first().size)
+    }
+
     // ── Entry photos (roadmap 1.4) ─────────────────────────────────────
 
     /** A photo as the sheet hands it over: a file in the staging folder. The bytes needn't be a real JPEG. */

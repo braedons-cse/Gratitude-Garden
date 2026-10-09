@@ -880,10 +880,16 @@ wipes every associated row.
   sign in, delete the photos, `delete_current_user`. It keeps no session in the browser.
   Someone who can't sign in (the app has no password reset yet) is sent to the contact
   address instead. See [Privacy policy and Data Safety](#privacy-policy-and-data-safety).
-- **Deleted elsewhere, still on a phone:** an app signed in to an account deleted on the
-  web keeps showing its cached garden. Its token stays valid for up to an hour after the
-  user is gone, and offline-first deliberately keeps sessions alive. The page tells people
-  to log out of or uninstall the app; noticing the missing user is a possible follow-up.
+- **Deleted elsewhere, still on a phone:** the token stays valid for up to an hour after the
+  user is gone, so the app asks. Each full refresh (launch, reconnect, pull-to-refresh;
+  screens reuse one from the last 30 s) starts with `GET /auth/v1/user`. A `user_not_found` or `session_not_found`
+  answer clears the session, and **every sign-out erases the device's copy**, whether it was
+  asked for or not: a refused refresh token lands on the login form with an empty database
+  too. Only a definite answer counts; offline or a 5xx keeps the user signed in. Walked on
+  the emulator: an account deleted the way the web page does it was back on the login form
+  with every table empty after one reconnect. Known limit: an unasked sign-out drops
+  entries still waiting to sync without the warning Log out gives. The next sign-in would
+  have dropped them anyway.
 
 ### Privacy policy and Data Safety
 

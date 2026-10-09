@@ -62,6 +62,9 @@ class FakeSupabase {
     /** Refuse any submit or edit whose text contains this, as the server refuses bad text. */
     @Volatile var refuseText: String? = null
 
+    /** The account was deleted elsewhere: the token still works, but the auth server no longer knows the user. */
+    @Volatile var userDeleted = false
+
     /** Delay every response, so overlapping refreshes really overlap. */
     @Volatile var latencyMs = 0L
 
@@ -175,6 +178,13 @@ class FakeSupabase {
 
         when {
             path == "/auth/v1/logout" -> respond("", HttpStatusCode.NoContent)
+            // GoTrue's answer for a token whose user is gone.
+            path == "/auth/v1/user" -> if (userDeleted) {
+                respond("""{"code":403,"error_code":"user_not_found","msg":"User from sub claim in JWT does not exist"}""",
+                    HttpStatusCode.Forbidden, headersOf(HttpHeaders.ContentType, "application/json"))
+            } else {
+                respond("""{"id":"$userId","aud":"authenticated"}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+            }
             path.startsWith("/storage/v1/object/authenticated/$BUCKET/") -> {
                 val bytes = storedPhotos[path.removePrefix("/storage/v1/object/authenticated/$BUCKET/")]
                 if (bytes == null) respond("""{"statusCode":"404","error":"not_found","message":"Object not found"}""", HttpStatusCode.NotFound, headersOf(HttpHeaders.ContentType, "application/json"))
