@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.GratitudeGarden" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Sage behind the app, so a cold start goes splash → sage → garden with no white flash. -->
+    <style name="Theme.GratitudeGarden" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_sage</item>
+    </style>
 </resources>

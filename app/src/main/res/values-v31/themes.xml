@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Android 12+ draws the launcher icon's foreground on this at a cold start. -->
+    <style name="Theme.GratitudeGarden" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/brand_sage</item>
+        <item name="android:windowSplashScreenBackground">@color/brand_sage</item>
+    </style>
+</resources>

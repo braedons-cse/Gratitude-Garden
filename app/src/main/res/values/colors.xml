@@ -7,4 +7,11 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- GgBgSage: the launcher icon's background, the splash and the window behind the app.
+         The staging flavor overrides the icon's, so its install looks different. -->
+    <color name="brand_sage">#FFE8F0E2</color>
+    <color name="ic_launcher_background">@color/brand_sage</color>
+    <!-- GgPrimary: the reminder's accent. -->
+    <color name="brand_primary">#FF5C8A4D</color>
 </resources>

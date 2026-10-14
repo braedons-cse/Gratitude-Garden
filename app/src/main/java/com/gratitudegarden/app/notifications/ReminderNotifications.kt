@@ -15,6 +15,7 @@ import androidx.core.app.PendingIntentCompat
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.gratitudegarden.app.MainActivity
+import com.gratitudegarden.app.R
 import com.gratitudegarden.app.model.Prompts
 import java.time.LocalDate
 import kotlin.random.Random
@@ -122,7 +123,8 @@ object ReminderNotifications {
         val message = MESSAGES[index.coerceIn(MESSAGES.indices)]
         val prompt = Prompts.forDay(LocalDate.now())
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(R.drawable.ic_stat_leaf)
+            .setColor(ContextCompat.getColor(context, R.color.brand_primary))
             .setContentTitle(message.title)
             .setContentText(message.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText("${message.body}\n\n$prompt"))
@@ -144,7 +146,8 @@ object ReminderNotifications {
         if (!canPost(context)) return
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(R.drawable.ic_stat_leaf)
+            .setColor(ContextCompat.getColor(context, R.color.brand_primary))
             .setContentTitle(message)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)

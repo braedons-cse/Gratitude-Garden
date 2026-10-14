@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The staging install sits next to the store one: a dark icon and its own name keep them
+     apart on the launcher, in the widget picker and in Settings. -->
+<resources>
+    <string name="app_name">GG Staging</string>
+    <!-- GgInk -->
+    <color name="ic_launcher_background">#FF2D3A2A</color>
+</resources>
