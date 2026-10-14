@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import java.time.LocalDate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -108,6 +110,19 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
     var password by remember { mutableStateOf("") }
     var showTimePicker by remember { mutableStateOf(false) }
     var confirmLogOut by remember { mutableStateOf(false) }
+
+    // The system's "Save to" screen: the user picks where the export goes (Downloads, Drive...),
+    // so it needs no permission and nothing is left in the app's own storage.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri -> uri?.let(vm::exportJournal) }
+
+    LaunchedEffect(ui.message) {
+        ui.message?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            vm.messageShown()
+        }
+    }
 
     // Re-check the OS notification toggle whenever we come back to the foreground
     // (e.g. the user just toggled it in system settings).
@@ -263,6 +278,12 @@ fun MeScreen(onSignOut: () -> Unit, onOpenAdmin: () -> Unit = {}) {
             micGranted = ui.micGranted,
             onEnableMic = { enableMic() },
             onManageMic = { openAppDetailsSettings() },
+        )
+        Spacer(Modifier.height(16.dp))
+
+        ExportCard(
+            exporting = ui.exporting,
+            onExport = { exportLauncher.launch("gratitude-garden-${LocalDate.now()}.zip") },
         )
         Spacer(Modifier.height(28.dp))
 
@@ -540,6 +561,51 @@ private fun MicrophoneCard(
             granted = micGranted,
             onEnable = onEnableMic,
             onManage = onManageMic,
+        )
+    }
+}
+
+// ── Export card: the whole journal out as a ZIP ─────────────────────────
+@Composable
+private fun ExportCard(exporting: Boolean, onExport: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(38.dp).clip(CircleShape).background(GgMoss),
+            contentAlignment = Alignment.Center,
+        ) {
+            GgIcon(name = GgIconName.Leaf, color = GgPrimaryDeep, size = 20.dp)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Your journal", fontFamily = Nunito, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GgInk)
+            Text(
+                "Save every thought and photo to keep",
+                fontFamily = Nunito,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                color = GgInkSoft,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (exporting) "Saving…" else "Export",
+            fontFamily = Nunito,
+            fontWeight = FontWeight.Bold,
+            fontSize = 12.5.sp,
+            color = GgBgCream,
+            modifier = Modifier
+                .clip(RoundedCornerShape(999.dp))
+                .background(if (exporting) GgInkMuted else GgPrimary)
+                .clickable(enabled = !exporting, onClick = onExport)
+                .padding(horizontal = 14.dp, vertical = 7.dp)
+                .testTag("me_export"),
         )
     }
 }

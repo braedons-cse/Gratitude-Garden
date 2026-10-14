@@ -65,12 +65,15 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -1322,6 +1325,49 @@ class GardenRepository(
         } catch (e: Exception) {
             Log.w(LogTags.APP_LOGIC, "Couldn't fetch a photo", e)
             null
+        }
+    }
+
+    /**
+     * Write the user's whole journal to [out] as a ZIP (JournalExport.kt): every live entry,
+     * those waiting to sync and refused ones too, with each photo this device has or can
+     * fetch now. Null when no one is signed in.
+     */
+    suspend fun exportJournal(out: OutputStream, zone: ZoneId = ZoneId.systemDefault()): ExportSummary? {
+        val uid = currentUid() ?: return null
+        val rows = db.entryDao().allLive(uid)
+        val photos = rows.mapNotNull { row -> row.photoPath?.let { row to photoFile(it) } }
+        return withContext(Dispatchers.IO) {
+            ZipOutputStream(out.buffered()).use { zip ->
+                // Photos first: a file can still go (a sync replacing it), and the journal
+                // should only point at the ones that made it in.
+                val included = mutableSetOf<String>()
+                for ((row, file) in photos) {
+                    if (file == null) continue
+                    try {
+                        val bytes = file.readBytes()
+                        zip.putNextEntry(ZipEntry(exportPhotoName(row)))
+                        zip.write(bytes)
+                        zip.closeEntry()
+                        included += row.id
+                    } catch (e: IOException) {
+                        Log.w(LogTags.APP_LOGIC, "A photo went before it was exported", e)
+                    }
+                }
+                val now = OffsetDateTime.now(zone).truncatedTo(ChronoUnit.SECONDS)
+                val export = JournalExport(
+                    format = EXPORT_FORMAT,
+                    exportedAt = now.toString(),
+                    entries = rows.map { exportedEntry(it, photoIncluded = it.id in included) },
+                )
+                zip.putNextEntry(ZipEntry(EXPORT_MARKDOWN))
+                zip.write(journalMarkdown(export, zone).toByteArray())
+                zip.closeEntry()
+                zip.putNextEntry(ZipEntry(EXPORT_JSON))
+                zip.write(journalJson(export).toByteArray())
+                zip.closeEntry()
+                ExportSummary(entries = rows.size, photos = included.size, photosMissing = photos.size - included.size)
+            }
         }
     }
 

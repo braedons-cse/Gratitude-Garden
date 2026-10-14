@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.gratitudegarden.app.data.AppSession
 import com.gratitudegarden.app.data.ConnectivityMonitor
+import com.gratitudegarden.app.data.ExportSummary
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.SubmitResult
 import com.gratitudegarden.app.data.local.GardenDatabase
@@ -27,6 +28,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -40,9 +44,11 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.Timeout
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.time.LocalDate
 import java.util.UUID
+import java.util.zip.ZipInputStream
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.ExperimentalTime
 
@@ -583,6 +589,59 @@ class GardenRepositoryTest {
         fake.offline = true
 
         assertNull(repo.photoFile(path))
+    }
+
+    /** The files in an exported ZIP, by name. */
+    private fun unzip(bytes: ByteArray): Map<String, ByteArray> =
+        ZipInputStream(bytes.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.associate { it.name to zip.readBytes() }
+        }
+
+    @Test
+    fun anExportHoldsEveryLiveEntryAndFetchesPhotosNotHereYet() = runBlocking {
+        fake.addEntries(3)
+        val (first, withPhoto, deleted) = fake.entries.map { it.id }
+        val path = "${fake.userId}/$withPhoto/p1.jpg"
+        fake.setPhotoElsewhere(withPhoto, path, byteArrayOf(7, 7, 7))
+        fake.deleteElsewhere(deleted)
+        signIn()
+        assertFalse(local(path).exists())
+
+        val out = ByteArrayOutputStream()
+        assertEquals(ExportSummary(entries = 2, photos = 1, photosMissing = 0), repo.exportJournal(out))
+
+        val files = unzip(out.toByteArray())
+        val photo = "photos/${fake.today}-$withPhoto.jpg"
+        assertEquals(setOf("journal.md", "journal.json", photo), files.keys)
+        assertArrayEquals(byteArrayOf(7, 7, 7), files.getValue(photo))
+        val json = Json.parseToJsonElement(files.getValue("journal.json").decodeToString()).jsonObject
+        val entries = json.getValue("entries").jsonArray.map { it.jsonObject }
+        assertEquals(listOf(first, withPhoto), entries.map { it.getValue("id").jsonPrimitive.content })
+        assertEquals(photo, entries[1].getValue("photo").jsonPrimitive.content)
+        val md = files.getValue("journal.md").decodeToString()
+        assertTrue(md.contains("thanks #0") && md.contains("![Photo]($photo)"))
+        assertFalse("a deleted entry stays out", md.contains("thanks #2"))
+    }
+
+    @Test
+    fun anOfflineExportKeepsWaitingEntriesAndSaysWhichPhotosAreMissing() = runBlocking {
+        fake.addEntries(1)
+        val id = fake.entries.single().id
+        fake.setPhotoElsewhere(id, "${fake.userId}/$id/p1.jpg")
+        signIn()
+        fake.offline = true
+        repo.submitEntry("on the train", voice = false)
+
+        val out = ByteArrayOutputStream()
+        assertEquals(ExportSummary(entries = 2, photos = 0, photosMissing = 1), repo.exportJournal(out))
+
+        val files = unzip(out.toByteArray())
+        assertEquals(setOf("journal.md", "journal.json"), files.keys)
+        val entries = Json.parseToJsonElement(files.getValue("journal.json").decodeToString())
+            .jsonObject.getValue("entries").jsonArray.map { it.jsonObject }
+        assertEquals("true", entries[0].getValue("photo_missing").jsonPrimitive.content)
+        assertEquals("on the train", entries[1].getValue("text").jsonPrimitive.content)
+        assertEquals("waiting", entries[1].getValue("status").jsonPrimitive.content)
     }
 
     @Test

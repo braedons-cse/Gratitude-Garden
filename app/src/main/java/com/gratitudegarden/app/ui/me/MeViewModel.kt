@@ -3,11 +3,15 @@ package com.gratitudegarden.app.ui.me
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.gratitudegarden.app.data.ExportSummary
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.LevelProgress
 import com.gratitudegarden.app.data.StreakStatus
@@ -19,11 +23,15 @@ import com.gratitudegarden.app.notifications.ReminderScheduler
 import com.gratitudegarden.app.ui.gardenApp
 import com.gratitudegarden.app.ui.repo
 import com.gratitudegarden.app.ui.showIn
+import com.gratitudegarden.app.util.LogTags
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MeUiState(
     val loading: Boolean = true,
@@ -53,6 +61,9 @@ data class MeUiState(
     val syncing: Boolean = false,
     /** Set when a "Sync now" couldn't reach the server. */
     val syncFailed: Boolean = false,
+    val exporting: Boolean = false,
+    /** How an export went, shown once. */
+    val message: String? = null,
 )
 
 class MeViewModel(
@@ -190,6 +201,35 @@ class MeViewModel(
     }
 
     /**
+     * Save the whole journal to [uri], the file the user just made in the system's "Save
+     * to" screen. If it can't be written, the empty file is taken away again.
+     */
+    fun exportJournal(uri: Uri) {
+        if (_ui.value.exporting) return
+        _ui.update { it.copy(exporting = true) }
+        viewModelScope.launch {
+            val resolver = appContext.contentResolver
+            var summary: ExportSummary? = null
+            try {
+                summary = withContext(Dispatchers.IO) {
+                    resolver.openOutputStream(uri)?.use { repo.exportJournal(it) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(LogTags.APP_LOGIC, "Couldn't export the journal", e)
+            } finally {
+                if (summary == null) runCatching { DocumentsContract.deleteDocument(resolver, uri) }
+                _ui.update { it.copy(exporting = false, message = exportMessage(summary)) }
+            }
+        }
+    }
+
+    fun messageShown() {
+        if (_ui.value.message != null) _ui.update { it.copy(message = null) }
+    }
+
+    /**
      * Permanently delete the signed-in account after the user has confirmed
      * twice and entered [password]. On success the Supabase session is cleared,
      * so [GratitudeGardenApp] auto-navigates back to the login screen — no
@@ -225,3 +265,18 @@ class MeViewModel(
         val Factory = viewModelFactory { initializer { MeViewModel(repo(), gardenApp()) } }
     }
 }
+
+/** What to say after an export; [summary] is null when it failed. */
+internal fun exportMessage(summary: ExportSummary?): String {
+    if (summary == null) return "Couldn't save your journal. Please try again."
+    val saved = buildString {
+        append("Saved ").append(plural(summary.entries, "thought"))
+        if (summary.photos > 0) append(" and ").append(plural(summary.photos, "photo"))
+        append(".")
+    }
+    if (summary.photosMissing == 0) return saved
+    val missing = if (summary.photosMissing == 1) "1 photo couldn't" else "${summary.photosMissing} photos couldn't"
+    return "$saved $missing be downloaded. Connect and export again to include them."
+}
+
+private fun plural(n: Int, noun: String) = if (n == 1) "1 $noun" else "$n ${noun}s"
