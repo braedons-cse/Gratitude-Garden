@@ -1,0 +1,48 @@
+# Unit tests and lint on every push to main and every pull request. Needs no secrets: without
+# local.properties the build falls back to an empty anon key and Sentry stays off, and no unit
+# test touches the network. The instrumented tests need a device and stay a local step.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Unit tests and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Gradle daemon is pinned to 21 (gradle/gradle-daemon-jvm.properties).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Caches Gradle (written from main only) and checks the wrapper jar's checksum.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Lint runs on both flavors: staging has the admin dashboard, consumer its stub.
+      - name: Unit tests and lint
+        run: ./gradlew testStagingDebugUnitTest lintConsumerDebug lintStagingDebug --continue
+
+      - name: Keep the reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 7
