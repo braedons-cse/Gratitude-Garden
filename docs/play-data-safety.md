@@ -83,7 +83,9 @@ Health info, and check whether the store's health-app policy then applies.
 - Delete the seeded `@example.com` test accounts. Delete their photos first (through the
   app, or the Storage API): Supabase won't delete a user who still owns stored files.
 - Create a plain (non-admin) account for reviewers, write a few entries in it, and give its
-  email and password under *App access*.
+  email and password under *App access*. `gg-demo@example.com`, the store screenshots'
+  account (`DEMO_*` in `local.properties`, see `docs/play-listing.md`), already is one: keep
+  it for this instead of deleting it with the others, or delete it too and make a fresh one.
 
 ## Setting up Play Console
 
