@@ -45,6 +45,7 @@ turning it into a shippable product.
   - [Entry photos](#entry-photos)
   - [Entry moods](#entry-moods)
   - [Prompts, days and lists](#prompts-days-and-lists)
+  - [Journal export](#journal-export)
   - [Crash reports and the funnel](#crash-reports-and-the-funnel)
   - [Account deletion](#account-deletion)
   - [Privacy policy and Data Safety](#privacy-policy-and-data-safety)
@@ -128,8 +129,9 @@ per unit of work.
   design problem (it breaks server-side search and the admin tooling and demands a key
   recovery story), but "the developer cannot read your journal" is a strong differentiator
   in this exact category.
-- **2.2 Export and data portability — S.** JSON / PDF / Markdown export. Easy to build,
-  privacy-credible, and it removes the "what if the app dies" objection.
+- **2.2 Export and data portability — S.** ✅ Done 2026-10-13: one ZIP with the journal as
+  Markdown and JSON plus every photo, saved wherever the user picks. See
+  [Journal export](#journal-export). PDF was left out; Markdown prints well enough.
 - **2.3 Monetization — M/L.** The garden economy fits a free tier plus a **Gratitude Garden
   Plus** subscription (Play Billing): unlimited photos, premium seeds and decor, insights,
   themes, cloud backup, streak freezes. Deliberately *not* recommended: paywalling the
@@ -153,8 +155,9 @@ per unit of work.
 - **Test depth — M.** Currently 5 unit-test classes (16 cases) + 3 UI tests. A public app needs repository
   tests against a fake backend, sync-conflict tests, and a smoke suite run against the
   **release** build (post-R8).
-- **CI/CD — S/M.** GitHub Actions running lint + tests on PRs, Play Console internal-track
-  upload on tag. Removes the "did I remember to run the tests" failure mode.
+- **CI/CD — S/M.** CI ✅ done 2026-10-13: `.github/workflows/ci.yml` runs the unit tests
+  and lint (both flavors) on every push to `main` and every PR, with no secrets. Left: a
+  Play Console internal-track upload on tag.
 - **Design system pass — M.** Dark mode is handled; a real color/type/spacing system,
   motion polish, and a custom icon set are what separate "student project" from "product"
   in screenshots.
@@ -791,6 +794,30 @@ Roadmap 1.4, the last slice. All of it is on the device: no migration and no RPC
   gone to Sentry. It now cuts to the last one, which is supabase-kt's. `ScrubTest` has the
   case.
 
+### Journal export
+
+Roadmap 2.2. **Me → Your journal → Export** saves the whole journal as one ZIP, through
+Android's own "Save to" screen (Downloads, Drive, anywhere a documents provider offers), so
+it needs no permission and leaves no copy in the app's storage. Inside:
+
+- `journal.md`, to read: a heading per day, oldest first, then each thought's time (in the
+  phone's zone, as the Journal shows it), mood, and photo. The words come out as written:
+  lines are kept, `•` lists become Markdown lists, and a line that Markdown would turn into
+  a heading, quote, rule or numbered list is escaped.
+- `journal.json`, to keep or move elsewhere: `format` (1), `exported_at`, and per entry `id`,
+  `date`, `written_at`, `text`, `mood`, `input_method`, `photo` and `status`. Absent fields
+  were never given. Bump `format` if the shape ever changes.
+- `photos/<day>-<entry id, first 8>.jpg`: the same re-encoded JPEGs the app keeps, so no
+  EXIF.
+
+It's built from Room (`GardenRepository.exportJournal`, formats in `data/JournalExport.kt`),
+so it works offline and includes entries **waiting to sync** or **refused** (`status`
+says which). Deleted entries are left out. A photo that was never downloaded to this phone is
+fetched first. If that fails, as it does offline, the entry is marked `photo_missing` and
+the message after the save says to connect and export again. A failed export deletes the
+half-written file. Coins, XP, the garden and the shop aren't in it: it's the journal, not a
+backup to restore from.
+
 ### Crash reports and the funnel
 
 Roadmap 0.6. Two halves, chosen so the app collects as little as it can.
@@ -1028,7 +1055,8 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
 ## Setup & build
 
 1. **Android SDK** — set `sdk.dir` in `local.properties` (created automatically by
-   Android Studio), e.g. `sdk.dir=C:/Users/<you>/AppData/Local/Android/Sdk`.
+   Android Studio), e.g. `sdk.dir=C\:/Users/<you>/AppData/Local/Android/Sdk`. Escape the
+   drive's colon (`C\:`): it's a properties file, and lint fails on a bare one.
 2. **Supabase keys** — add to the same `local.properties` (gitignored):
    ```properties
    SUPABASE_URL=https://wllqgdjkkhztbefdvvsf.supabase.co
@@ -1047,6 +1075,7 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
    ./gradlew assembleStagingDebug      # build the debug APK (staging flavor)
    ./gradlew installStagingDebug       # install on a connected device/emulator
    ./gradlew testStagingDebugUnitTest  # unit tests
+   ./gradlew lintConsumerDebug lintStagingDebug  # lint; an error fails it, as in CI
    ./gradlew connectedCheck            # instrumented UI tests, every flavor (needs a device)
    ```
 
@@ -1056,6 +1085,11 @@ Rather than hand-coding nine forms, each table is described once as an `AdminTab
    through `ui/admin/AdminTools`, a same-named object in each flavor. The consumer version is
    an empty stub, so no admin code is compiled into the store APK.
 
+   **CI** (`.github/workflows/ci.yml`) runs the unit tests and both lint tasks on every push to
+   `main` and every pull request. It needs no secrets, since the build falls back to an empty
+   anon key without `local.properties`. The instrumented tests need a device, so they're still
+   run locally. If CI fails, the lint and test reports are attached to the run.
+
 > `local.properties` is gitignored on purpose — keys are never committed.
 
 **Release builds** are R8-minified and signed with the Play upload key. The keystore lives
@@ -1063,7 +1097,7 @@ outside the repo; point at it from `local.properties` (or the same names as envi
 variables):
 
 ```properties
-UPLOAD_STORE_FILE=C:/path/to/gratitude-garden-upload.jks   # forward slashes
+UPLOAD_STORE_FILE=C\:/path/to/gratitude-garden-upload.jks   # forward slashes, colon escaped
 UPLOAD_STORE_PASSWORD=...
 UPLOAD_KEY_ALIAS=upload
 UPLOAD_KEY_PASSWORD=...
