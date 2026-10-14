@@ -86,8 +86,9 @@ function Resolve-AndroidSdk {
         $line = Select-String -Path $localProps -Pattern '^\s*sdk\.dir\s*=\s*(.+)$' |
                 Select-Object -First 1
         if ($line) {
-            # sdk.dir escapes backslashes and may use forward slashes; normalise both.
-            $candidates += $line.Matches[0].Groups[1].Value.Trim().Replace('\\', '\').Replace('/', '\')
+            # A properties file escapes the drive colon and backslashes (Android Studio writes
+            # C\:\\Users\\...), and sdk.dir may use forward slashes; normalise all three.
+            $candidates += $line.Matches[0].Groups[1].Value.Trim().Replace('\:', ':').Replace('\\', '\').Replace('/', '\')
         }
     }
 
