@@ -1,6 +1,7 @@
 package com.gratitudegarden.app.notifications
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -131,7 +132,7 @@ object ReminderNotifications {
         if (canReply) builder.addAction(replyAction(context, prompt))
         builder.addAction(laterAction(context))
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+        post(context, builder.build())
     }
 
     /**
@@ -154,10 +155,18 @@ object ReminderNotifications {
                 .setStyle(NotificationCompat.BigTextStyle().bigText("“$written”"))
         }
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+        post(context, builder.build())
     }
 
     fun dismiss(context: Context) = NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+
+    /** Post [notification], after [canPost]. The grant can still go in between; then it's skipped too. */
+    private fun post(context: Context, notification: Notification) {
+        try {
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        } catch (_: SecurityException) {
+        }
+    }
 
     private fun canPost(context: Context): Boolean {
         ensureChannel(context)
