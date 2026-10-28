@@ -104,8 +104,9 @@ per unit of work.
   an **XP ladder** (✅ **done**: days journaled earn levels, which unlock the shop's
   level-gated seeds; see [XP and levels](#xp-and-levels)), **backdrops you can equip**
   (✅ **done**: one scene per level from 2 to 5, drawn above the plot; see
-  [Backdrops](#backdrops)), seasons and weather, rare and evolving plants, garden expansion, and animated milestone
-  moments at 7/30/100 days.
+  [Backdrops](#backdrops)), **milestone moments** at 7/30/100 days (✅ **done**: an animated
+  scene and a card to share; see [Streak milestones](#streak-milestones)), seasons and
+  weather, rare and evolving plants, and garden expansion.
 - **1.4 Entry experience beyond a text box — M.** **Photos** attached to an entry (✅
   **done**: one per entry, from the gallery or the camera, added or changed later in Edit,
   and written offline like the text; see [Entry photos](#entry-photos)); a **mood** per
@@ -585,6 +586,32 @@ on this device, the Garden shows a level-up dialog naming any seeds it unlocked,
 (`LevelPreferences`), so a level reached by an entry the outbox delivered in the
 background still gets its moment the next time the Garden opens. The first level a device
 sees for an account is recorded silently.
+
+### Streak milestones
+
+A streak of **7, 30 or 100** days gets its own moment on the Garden: the milestone's plant
+grows from a sprout and throws its petals, the day count runs up, and **Share** sends a
+picture of it. Nothing is paid for one, so there's no server change: it's all on the device
+(`model/Milestones.kt`, `ui/garden/MilestoneCelebration.kt`, `MilestoneCard.kt`).
+
+- **What counts.** The streak on the Garden's chip (`streakNow`). A freeze holds its number
+  without adding to it, so a freeze can't trigger a milestone. A broken run reads 0, so a
+  phone that syncs a run after it ended doesn't celebrate it.
+- **Once per run, per device.** `MilestonePreferences` keeps the highest milestone this
+  run has been celebrated for. It works like `LevelPreferences`: the first streak a device
+  sees is recorded without a dialog, and an entry the outbox delivered in the background is
+  celebrated the next time the Garden opens. When a run breaks, the record drops back, so
+  the next 7 days count again. If several entries arrive at once and skip over a
+  milestone, the highest one reached is shown.
+- **One dialog at a time.** Milestone first, then any level-up (day 8 is often level 3),
+  then the reminder prompt.
+- **The card** is 1080×1350, painted off screen the same way as the widget's garden: the
+  dialog's final frame on the equipped backdrop, the count and a wordmark. Nothing the user
+  wrote is on it: no journal text, no display name. It's written to
+  `cache/share/milestone.png`, overwritten each time, and handed to the share sheet through
+  the existing FileProvider (`file_paths.xml` lists only that folder and the camera's).
+  Nothing leaves the phone unless the user picks somewhere to send it.
+- With *Remove animations* on (animator scale 0), the dialog opens on its final frame.
 
 ### Backdrops
 

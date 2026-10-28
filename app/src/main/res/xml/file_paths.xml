@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- What the FileProvider may share: only the folder a camera app writes a new photo into
-     (PhotoPreparer.CAPTURE_DIR). Journal photos themselves are never shared. -->
+<!-- What the FileProvider may share: the folder a camera app writes a new photo into
+     (PhotoPreparer.CAPTURE_DIR), and the milestone card being shared (MilestoneCard).
+     Journal photos themselves are never shared. -->
 <paths>
     <cache-path name="camera" path="camera/" />
+    <cache-path name="share" path="share/" />
 </paths>

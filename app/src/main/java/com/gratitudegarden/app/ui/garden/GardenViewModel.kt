@@ -11,9 +11,12 @@ import com.gratitudegarden.app.data.GardenPlantRow
 import com.gratitudegarden.app.data.GardenRepository
 import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.data.LevelPreferences
+import com.gratitudegarden.app.data.MilestonePreferences
 import com.gratitudegarden.app.data.PhotoPreparer
 import com.gratitudegarden.app.data.StreakStatus
 import com.gratitudegarden.app.data.streakNow
+import com.gratitudegarden.app.model.MilestoneStep
+import com.gratitudegarden.app.model.milestoneStep
 import com.gratitudegarden.app.notifications.ReminderPreferences
 import com.gratitudegarden.app.notifications.ReminderScheduler
 import com.gratitudegarden.app.ui.NEEDS_CONNECTION_MESSAGE
@@ -28,12 +31,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
 /** A level reached and not yet congratulated on this device, and the seeds and backdrops it opened up. */
 data class LevelUp(val level: Int, val unlocked: List<String>)
+
+/** A streak milestone (7, 30, 100) this run reached and this device hasn't celebrated yet. */
+data class Milestone(val days: Int)
 
 data class GardenUiState(
     /** True until Room's first read; the screen stays blank rather than show defaults. */
@@ -59,6 +66,7 @@ data class GardenUiState(
     val message: String? = null,
     val showNotifPrompt: Boolean = false,
     val levelUp: LevelUp? = null,
+    val milestone: Milestone? = null,
     /** Writing works offline; the economy (plant, water, move, dig) doesn't. */
     val online: Boolean = true,
 ) {
@@ -75,6 +83,7 @@ class GardenViewModel(
     val ui: StateFlow<GardenUiState> = _ui.asStateFlow()
 
     private val levelPrefs = LevelPreferences(appContext)
+    private val milestonePrefs = MilestonePreferences(appContext)
 
     // Captured once: this ViewModel lives inside the signed-in user's SessionScope.
     private val userId = (repo.session.value as? AppSession.SignedIn)?.userId
@@ -102,6 +111,7 @@ class GardenViewModel(
         showIn(_ui, repo.observeDailyCap()) { copy(dailyCap = it) }
         showIn(_ui, repo.isOnline) { copy(online = it) }
         watchLevel()
+        watchMilestone()
         refresh()
     }
 
@@ -142,6 +152,36 @@ class GardenViewModel(
         val level = _ui.value.levelUp?.level ?: return
         _ui.update { it.copy(levelUp = null) }
         viewModelScope.launch { levelPrefs.setCelebrated(uid, level) }
+    }
+
+    /**
+     * Offer the milestone moment when the synced streak passes one not yet celebrated here.
+     * Keyed off the stats like [watchLevel] is off the profile, so a background delivery
+     * still gets its moment; the rules are in [milestoneStep].
+     */
+    private fun watchMilestone() {
+        val uid = userId ?: return
+        viewModelScope.launch {
+            combine(
+                repo.observeStats().filterNotNull().map { it.streakNow.days },
+                milestonePrefs.celebrated(uid),
+            ) { streak, celebrated -> milestoneStep(streak, celebrated) }
+                .collect { step ->
+                    when (step) {
+                        is MilestoneStep.Record -> milestonePrefs.setCelebrated(uid, step.value)
+                        is MilestoneStep.Celebrate -> _ui.update { it.copy(milestone = Milestone(step.days)) }
+                        MilestoneStep.None -> _ui.update { it.copy(milestone = null) }
+                    }
+                }
+        }
+    }
+
+    /** The milestone moment was closed; don't show it again this run. */
+    fun onMilestoneSeen() {
+        val uid = userId ?: return
+        val days = _ui.value.milestone?.days ?: return
+        _ui.update { it.copy(milestone = null) }
+        viewModelScope.launch { milestonePrefs.setCelebrated(uid, days) }
     }
 
     private fun ownedSeeds(): Flow<List<Item>> =

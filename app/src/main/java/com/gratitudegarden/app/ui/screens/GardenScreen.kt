@@ -100,6 +100,7 @@ import com.gratitudegarden.app.data.Item
 import com.gratitudegarden.app.ui.garden.GardenUiState
 import com.gratitudegarden.app.ui.garden.GardenViewModel
 import com.gratitudegarden.app.ui.garden.LevelUp
+import com.gratitudegarden.app.ui.garden.MilestoneCelebration
 import com.gratitudegarden.app.ui.sprites.BackdropScene
 import com.gratitudegarden.app.ui.sprites.CoinIcon
 import com.gratitudegarden.app.ui.sprites.GgIcon
@@ -168,6 +169,7 @@ fun GardenRoute(
             vm.onLevelUpSeen()
             if (visitShop) onOpenShop()
         },
+        onMilestoneClosed = vm::onMilestoneSeen,
         placingItemId = placingItemId,
         onPlantSeed = { itemId, x, y -> vm.plantSeedAt(itemId, x, y) },
         onMovePlant = { plantId, x, y -> vm.movePlant(plantId, x, y) },
@@ -190,6 +192,7 @@ fun GardenScreen(
     onReminderPromptDecided: (Boolean) -> Unit = {},
     /** True when the user chose to go to the shop. */
     onLevelUpClosed: (visitShop: Boolean) -> Unit = {},
+    onMilestoneClosed: () -> Unit = {},
     placingItemId: String? = null,
     onPlantSeed: (String, Int, Int) -> Unit = { _, _, _ -> },
     onMovePlant: (String, Int, Int) -> Unit = { _, _, _ -> },
@@ -385,9 +388,17 @@ fun GardenScreen(
         )
     }
 
-    // One dialog at a time; the reminder prompt waits for the level-up to be closed.
+    // One dialog at a time: a streak milestone, then a level-up (day 8 is often level 3),
+    // then the reminder prompt.
+    val milestone = ui.milestone
     val levelUp = ui.levelUp
-    if (levelUp != null) {
+    if (milestone != null) {
+        MilestoneCelebration(
+            milestone = milestone,
+            backdropSlug = ui.activeBackdropId?.let { ui.itemSlugs[it] },
+            onClose = onMilestoneClosed,
+        )
+    } else if (levelUp != null) {
         LevelUpDialog(levelUp, onClose = onLevelUpClosed)
     } else if (ui.showNotifPrompt) {
         NotifPromptDialog(
